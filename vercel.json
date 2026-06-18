@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/reconcile.py": {
+      "maxDuration": 30
+    }
+  }
+}
