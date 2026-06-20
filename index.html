@@ -23,6 +23,11 @@
   .summary { margin: 16px 0; padding: 12px; background: #f7f7f7; border-radius: 6px; font-size: 14px; }
   .loading { color: #666; }
   .error { color: #dc2626; padding: 12px; background: #fef2f2; border-radius: 6px; }
+  .shipped-section { margin-top: 40px; padding-top: 24px; border-top: 1px solid #eee; }
+  .shipped-buttons { display: flex; gap: 10px; margin: 12px 0; }
+  .shipped-btn { background: #16a34a; }
+  .shipped-btn:hover { background: #15803d; }
+  .shipped-result { margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 6px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -38,6 +43,21 @@
 </div>
 
 <div id="result"></div>
+
+<div class="shipped-section">
+  <h2 style="font-size: 18px;">Mark Supplier as Shipped</h2>
+  <p style="color: #666; font-size: 14px;">
+    Click once a supplier has confirmed shipment (Asmodee's email, or the Universal Dist / ACDD charge notification).
+    Asmodee checks the latest reconciliation results to only mark orders where every Asmodee item fully matched.
+    Universal Dist and ACDD mark every order that needed them, since there's no itemized confirmation for those two.
+  </p>
+  <div class="shipped-buttons">
+    <button class="shipped-btn" onclick="markShipped('Asmodee')">Asmodee Shipped</button>
+    <button class="shipped-btn" onclick="markShipped('Universal Dist')">Universal Dist Shipped</button>
+    <button class="shipped-btn" onclick="markShipped('ACDD')">ACDD Shipped</button>
+  </div>
+  <div id="shippedResult"></div>
+</div>
 
 <script>
 const fileInput = document.getElementById('fileInput');
@@ -125,6 +145,41 @@ uploadBtn.addEventListener('click', async () => {
 
   uploadBtn.disabled = false;
 });
+
+async function markShipped(supplier) {
+  const shippedResultDiv = document.getElementById('shippedResult');
+  shippedResultDiv.innerHTML = `<p class="loading">Marking ${supplier} as shipped...</p>`;
+
+  try {
+    const res = await fetch('/api/mark-shipped', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supplier }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      shippedResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      return;
+    }
+
+    let html = `<div class="shipped-result">`;
+    html += `<strong>${data.completedAndTagged.length}</strong> order(s) fully shipped and tagged in Shopify`;
+    if (data.completedAndTagged.length) {
+      html += `: ${data.completedAndTagged.join(', ')}`;
+    }
+    if (data.skippedNotYetFullyMatched && data.skippedNotYetFullyMatched.length) {
+      html += `<br><span style="color:#d97706;">${data.skippedNotYetFullyMatched.length} order(s) not yet fully matched on the quote, left pending: ${data.skippedNotYetFullyMatched.join(', ')}</span>`;
+    }
+    if (data.tagErrors && data.tagErrors.length) {
+      html += `<br><span style="color:#dc2626;">${data.tagErrors.length} order(s) had tagging errors - check manually.</span>`;
+    }
+    html += `</div>`;
+    shippedResultDiv.innerHTML = html;
+  } catch (err) {
+    shippedResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+}
 </script>
 
 </body>

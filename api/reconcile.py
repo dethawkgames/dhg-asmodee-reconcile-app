@@ -183,7 +183,8 @@ def run_comparison(submitted_rows, quote_items):
         sku = row[0].strip()
         qty = int(row[1]) if len(row) > 1 and str(row[1]).isdigit() else 0
         title = row[4] if len(row) > 4 else ''
-        submitted[sku] = {'quantity': qty, 'title': title}
+        order_names = row[6] if len(row) > 6 else ''
+        submitted[sku] = {'quantity': qty, 'title': title, 'order_names': order_names}
 
     quoted = {}
     for item in quote_items:
@@ -199,6 +200,7 @@ def run_comparison(submitted_rows, quote_items):
     for sku in sorted(all_skus):
         sub = submitted.get(sku)
         quo = quoted.get(sku)
+        order_names = sub['order_names'] if sub else ''
 
         if sub and quo:
             if sub['quantity'] == quo['quantity']:
@@ -209,20 +211,54 @@ def run_comparison(submitted_rows, quote_items):
                 status = 'Less than submitted (partial shipment?)'
             results.append([
                 sku, sub['title'] or quo['description'],
-                sub['quantity'], quo['quantity'], status
+                sub['quantity'], quo['quantity'], status, order_names
             ])
         elif sub and not quo:
             results.append([
                 sku, sub['title'], sub['quantity'], 0,
-                'Missing from quote entirely - needs review'
+                'Missing from quote entirely - needs review', order_names
             ])
         elif quo and not sub:
             results.append([
                 sku, quo['description'], 0, quo['quantity'],
-                'In quote but not submitted - needs review'
+                'In quote but not submitted - needs review', ''
             ])
 
     return results
+
+
+# An item "counts as shipped" for an order if its status is Match or the
+# preorder/backorder overage case - both mean the customer's ordered quantity
+# is genuinely covered. Anything else means that SKU has not actually arrived.
+SHIPPED_OK_STATUSES = {'Match', 'More than submitted (likely preorder/backorder)'}
+
+
+def compute_fully_shipped_orders(comparison_results):
+    """Given reconciliation results (each row's last column is Order Names),
+    returns the set of order names where EVERY Asmodee SKU belonging to that
+    order has a status in SHIPPED_OK_STATUSES. An order with even one SKU
+    that's missing/short/unexpected is excluded - it's not fully shipped yet."""
+    order_skus_ok = {}   # order_name -> count of SKUs that are OK
+    order_skus_total = {}  # order_name -> total SKUs seen for that order
+
+    for row in comparison_results:
+        sku, title, sub_qty, quo_qty, status = row[0], row[1], row[2], row[3], row[4]
+        order_names_str = row[5] if len(row) > 5 else ''
+        if not order_names_str:
+            continue
+        for order_name in order_names_str.split(', '):
+            order_name = order_name.strip()
+            if not order_name:
+                continue
+            order_skus_total[order_name] = order_skus_total.get(order_name, 0) + 1
+            if status in SHIPPED_OK_STATUSES:
+                order_skus_ok[order_name] = order_skus_ok.get(order_name, 0) + 1
+
+    fully_shipped = set()
+    for order_name, total in order_skus_total.items():
+        if order_skus_ok.get(order_name, 0) == total:
+            fully_shipped.add(order_name)
+    return fully_shipped
 
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
@@ -257,11 +293,11 @@ class handler(BaseHTTPRequestHandler):
 
             # Write to Latest Reconciliation tab
             ensure_reconcile_tab_exists()
-            header = [['Shopify SKU', 'Title', 'Submitted Qty', 'Quoted Qty', 'Status']]
-            sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:E1000")
-            sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:E1", header)
+            header = [['Shopify SKU', 'Title', 'Submitted Qty', 'Quoted Qty', 'Status', 'Order Names']]
+            sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1000")
+            sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1", header)
             if results:
-                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:E{len(results)+1}", results)
+                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F{len(results)+1}", results)
 
             self._send_json(200, {
                 'success': True,

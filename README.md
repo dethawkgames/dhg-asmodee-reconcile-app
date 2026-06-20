@@ -64,3 +64,20 @@ This is unusual and not fully explained. If you hit `invalid_grant` / `Invalid J
 1. Don't assume it's a code bug — the JWT construction has been validated correct multiple times.
 2. Generate a fresh key in Cloud Console (IAM & Admin → Service Accounts → `dhg-sheets-bot` → Keys), and update the `GOOGLE_SA_PRIVATE_KEY` environment variable wherever this tool (or any of the other DHG tools using this same service account) is deployed.
 3. Consider checking with Google Cloud support or your account's audit logs if this keeps recurring — it may point to an org policy (like a key-rotation/expiry policy) silently revoking keys after a short window, which would explain why each fresh key works immediately but stops working later.
+
+## Mark Supplier Shipped (added later)
+
+Three buttons on the same page let you record when a supplier confirms shipment:
+
+- **Asmodee Shipped** — checks the *Latest Reconciliation* tab (the most recent PDF comparison run). An order only gets marked complete for Asmodee if every one of its Asmodee SKUs has a status of `Match` or the preorder/backorder overage case. If any SKU for that order is short, missing, or unexpected, the order stays pending for Asmodee.
+- **Universal Dist Shipped** / **ACDD Shipped** — no itemized confirmation exists for these suppliers (just a credit card charge), so clicking marks every order currently needing that supplier as shipped, unconditionally. This is a deliberate best-guess to keep customers informed; it gets corrected for real once the physical packing slip arrives and you do your real next check.
+
+### How completion works
+
+A new **Shipment Tracking** tab (built automatically each Monday by the Supplier Order Aggregation tool) holds one row per order: `Order # | Suppliers Needed | Suppliers Shipped So Far | Status`. Each button click adds its supplier to "Suppliers Shipped So Far" for every eligible order. Once every supplier an order needs has been checked off — which might happen across multiple button clicks, possibly days apart — the order's status flips to `Complete` and it gets tagged `dhg-shipped-from-supplier` in Shopify automatically.
+
+This means an order with items from two different suppliers needs both buttons clicked (in either order, on either day) before the customer-facing tag is applied.
+
+### Important: this only works for the CURRENT week
+
+The Shipment Tracking tab gets rebuilt fresh every Monday by the aggregation tool. If a supplier's shipment isn't marked before the next Monday's run, that week's tracking data is gone and the button will act on the new week's orders instead. Mark shipments before each Monday's aggregation run.
