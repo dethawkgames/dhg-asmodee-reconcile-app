@@ -19,6 +19,7 @@
   .status-more { color: #d97706; }
   .status-less { color: #dc2626; }
   .status-missing { color: #dc2626; font-weight: 600; }
+  .status-preorder { color: #6366f1; font-weight: 600; }
   .status-unexpected { color: #d97706; font-weight: 600; }
   .summary { margin: 16px 0; padding: 12px; background: #f7f7f7; border-radius: 6px; font-size: 14px; }
   .loading { color: #666; }
@@ -91,6 +92,7 @@ function statusClass(status) {
   if (status.includes('More than')) return 'status-more';
   if (status.includes('Less than')) return 'status-less';
   if (status.includes('Missing')) return 'status-missing';
+  if (status.includes('Pre-Order')) return 'status-preorder';
   if (status.includes('not submitted')) return 'status-unexpected';
   return '';
 }

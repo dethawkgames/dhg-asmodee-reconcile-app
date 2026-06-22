@@ -183,8 +183,9 @@ def run_comparison(submitted_rows, quote_items):
         sku = row[0].strip()
         qty = int(row[1]) if len(row) > 1 and str(row[1]).isdigit() else 0
         title = row[4] if len(row) > 4 else ''
+        stock_status = row[5] if len(row) > 5 else ''
         order_names = row[6] if len(row) > 6 else ''
-        submitted[sku] = {'quantity': qty, 'title': title, 'order_names': order_names}
+        submitted[sku] = {'quantity': qty, 'title': title, 'stock_status': stock_status, 'order_names': order_names}
 
     quoted = {}
     for item in quote_items:
@@ -214,9 +215,17 @@ def run_comparison(submitted_rows, quote_items):
                 sub['quantity'], quo['quantity'], status, order_names
             ])
         elif sub and not quo:
+            # Genuine preorders ship later than the rest of an Asmodee order (within
+            # 10 days of release), so a preorder SKU legitimately won't be on this
+            # quote yet even though it was submitted. That's expected, not a problem -
+            # only flag it for review if Stock Status says something other than Pre-Order.
+            if sub['stock_status'].strip() == 'Pre-Order':
+                status = 'Pre-Order - not expected on this shipment yet'
+            else:
+                status = 'Missing from quote entirely - needs review'
             results.append([
                 sku, sub['title'], sub['quantity'], 0,
-                'Missing from quote entirely - needs review', order_names
+                status, order_names
             ])
         elif quo and not sub:
             results.append([
