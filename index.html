@@ -46,17 +46,34 @@
 <div id="result"></div>
 
 <div class="shipped-section">
-  <h2 style="font-size: 18px;">Mark Supplier as Shipped</h2>
+  <h2 style="font-size: 18px;">Order Pipeline</h2>
   <p style="color: #666; font-size: 14px;">
-    Click once a supplier has confirmed shipment (Asmodee's email, or the Universal Dist / ACDD charge notification).
-    Asmodee checks the latest reconciliation results to only mark orders where every Asmodee item fully matched.
-    Universal Dist and ACDD mark every order that needed them, since there's no itemized confirmation for those two.
+    Click each supplier as it reaches a stage. Asmodee's "Shipped" stage checks the latest reconciliation
+    results to only mark orders where every Asmodee item fully matched; everything else is unconditional
+    since there's no itemized confirmation available for it.
   </p>
+
+  <h3 style="font-size: 15px; margin-top: 20px;">Ordered from Supplier</h3>
   <div class="shipped-buttons">
-    <button class="shipped-btn" onclick="markShipped('Asmodee')">Asmodee Shipped</button>
-    <button class="shipped-btn" onclick="markShipped('Universal Dist')">Universal Dist Shipped</button>
-    <button class="shipped-btn" onclick="markShipped('ACDD')">ACDD Shipped</button>
+    <button class="shipped-btn" onclick="markStage('Asmodee', 'ordered')">Asmodee - Ordered</button>
+    <button class="shipped-btn" onclick="markStage('Universal Dist', 'ordered')">Universal Dist - Ordered</button>
+    <button class="shipped-btn" onclick="markStage('ACDD', 'ordered')">ACDD - Ordered</button>
   </div>
+
+  <h3 style="font-size: 15px; margin-top: 20px;">Shipped from Supplier</h3>
+  <div class="shipped-buttons">
+    <button class="shipped-btn" onclick="markStage('Asmodee', 'shipped')">Asmodee - Shipped</button>
+    <button class="shipped-btn" onclick="markStage('Universal Dist', 'shipped')">Universal Dist - Shipped</button>
+    <button class="shipped-btn" onclick="markStage('ACDD', 'shipped')">ACDD - Shipped</button>
+  </div>
+
+  <h3 style="font-size: 15px; margin-top: 20px;">Shipment Arrived (at our store)</h3>
+  <div class="shipped-buttons">
+    <button class="shipped-btn" onclick="markStage('Asmodee', 'arrived')">Asmodee - Shipment Arrived</button>
+    <button class="shipped-btn" onclick="markStage('Universal Dist', 'arrived')">Universal Dist - Shipment Arrived</button>
+    <button class="shipped-btn" onclick="markStage('ACDD', 'arrived')">ACDD - Shipment Arrived</button>
+  </div>
+
   <div id="shippedResult"></div>
 </div>
 
@@ -148,15 +165,15 @@ uploadBtn.addEventListener('click', async () => {
   uploadBtn.disabled = false;
 });
 
-async function markShipped(supplier) {
+async function markStage(supplier, stage) {
   const shippedResultDiv = document.getElementById('shippedResult');
-  shippedResultDiv.innerHTML = `<p class="loading">Marking ${supplier} as shipped...</p>`;
+  shippedResultDiv.innerHTML = `<p class="loading">Marking ${supplier} - ${stage}...</p>`;
 
   try {
-    const res = await fetch('/api/mark-shipped', {
+    const res = await fetch('/api/mark-stage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ supplier }),
+      body: JSON.stringify({ supplier, stage }),
     });
     const data = await res.json();
 
@@ -166,12 +183,15 @@ async function markShipped(supplier) {
     }
 
     let html = `<div class="shipped-result">`;
-    html += `<strong>${data.completedAndTagged.length}</strong> order(s) fully shipped and tagged in Shopify`;
+    html += `<strong>${data.completedAndTagged.length}</strong> order(s) fully reached this stage and were tagged in Shopify`;
     if (data.completedAndTagged.length) {
       html += `: ${data.completedAndTagged.join(', ')}`;
     }
     if (data.skippedNotYetFullyMatched && data.skippedNotYetFullyMatched.length) {
       html += `<br><span style="color:#d97706;">${data.skippedNotYetFullyMatched.length} order(s) not yet fully matched on the quote, left pending: ${data.skippedNotYetFullyMatched.join(', ')}</span>`;
+    }
+    if (data.skippedAlreadyInventoryQueued && data.skippedAlreadyInventoryQueued.length) {
+      html += `<br><span style="color:#666;">${data.skippedAlreadyInventoryQueued.length} order(s) already inventory-queued (ready to pack from bins), left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
     }
     if (data.tagErrors && data.tagErrors.length) {
       html += `<br><span style="color:#dc2626;">${data.tagErrors.length} order(s) had tagging errors - check manually.</span>`;

@@ -9,20 +9,34 @@ from http.server import BaseHTTPRequestHandler
 import jwt
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
-TRACKING_RANGE = "'Shipment Tracking'!A2:D1000"
+TRACKING_RANGE = "'Shipment Tracking'!A2:F1000"
 RECONCILE_RANGE = "'Latest Reconciliation'!A2:F1000"
 
 SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
 SHOPIFY_API_VERSION = '2025-01'
 
 VALID_SUPPLIERS = {'Asmodee', 'Universal Dist', 'ACDD'}
+VALID_STAGES = {'ordered', 'shipped', 'arrived'}
 
+# Column index (within a tracking row) for each stage's "so far" list, and the
+# Shopify tag to apply once that stage is fully complete across all suppliers.
+STAGE_CONFIG = {
+    'ordered': {'col': 2, 'completion_tag': 'dhg-status-order-supplier', 'next_overall': 'Pending Shipment'},
+    'shipped': {'col': 3, 'completion_tag': 'dhg-shipped-from-supplier', 'next_overall': 'Pending Arrival'},
+    'arrived': {'col': 4, 'completion_tag': 'dhg-status-order-received', 'next_overall': 'Ready to Pack'},
+}
+OVERALL_STATUS_COL = 5
 
-# ── Google Sheets auth + access (same pattern as reconcile.py) ──────────────
+# ── Google Sheets auth + access ──────────────────────────────────────────────
 
 def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
     sa_email = os.environ['GOOGLE_SA_EMAIL']
-    sa_key = os.environ['GOOGLE_SA_PRIVATE_KEY'].replace('\\n', '\n')
+    raw_key = os.environ.get('GOOGLE_SA_PRIVATE_KEY_B64') or os.environ.get('GOOGLE_SA_PRIVATE_KEY', '')
+    if os.environ.get('GOOGLE_SA_PRIVATE_KEY_B64'):
+        import base64
+        sa_key = base64.b64decode(raw_key).decode('utf-8')
+    else:
+        sa_key = raw_key.replace('\\n', '\n')
 
     now = int(time.time())
     payload = {
@@ -107,33 +121,48 @@ def shopify_graphql(query, variables=None):
     return result['data']
 
 
-def get_order_id_by_name(order_name):
-    """order_name like '#5360' - Shopify's order search query needs it without
-    URL-unsafe characters causing issues, so we pass it through as a query string."""
+def get_order_id_and_current_status(order_name):
     data = shopify_graphql('''
         query getOrder($q: String!) {
-          orders(first: 1, query: $q) { edges { node { id name } } }
+          orders(first: 1, query: $q) { edges { node { id name tags } } }
         }
     ''', {'q': f'name:{order_name}'})
     edges = data['orders']['edges']
-    return edges[0]['node']['id'] if edges else None
+    if not edges:
+        return None, None
+    node = edges[0]['node']
+    current_tag = next((t for t in node['tags'] if t.startswith('dhg-status-')), None)
+    current_status = current_tag.replace('dhg-status-', '') if current_tag else None
+    return node['id'], current_status
 
 
-def tag_order_shipped_from_supplier(order_id):
+def apply_completion_tag(order_id, tag):
     shopify_graphql('''
         mutation tagsAdd($id: ID!, $tags: [String!]!) {
           tagsAdd(id: $id, tags: $tags) {
             userErrors { field message }
           }
         }
-    ''', {'id': order_id, 'tags': ['dhg-shipped-from-supplier']})
+    ''', {'id': order_id, 'tags': [tag]})
+
+
+def remove_status_tag(order_id, tag):
+    shopify_graphql('''
+        mutation tagsRemove($id: ID!, $tags: [String!]!) {
+          tagsRemove(id: $id, tags: $tags) {
+            userErrors { field message }
+          }
+        }
+    ''', {'id': order_id, 'tags': [tag]})
 
 
 # ── Core logic ───────────────────────────────────────────────────────────────
 
 def get_asmodee_fully_shipped_orders():
     """Reads the Latest Reconciliation tab and returns the set of order names
-    where every Asmodee SKU for that order is Match or More-than-submitted."""
+    where every Asmodee SKU for that order is Match or More-than-submitted
+    (the Pre-Order status also doesn't count as shipped - it's expected to be
+    absent from this week's quote, not actually in hand yet)."""
     rows = sheets_get(AGG_SHEET_ID, RECONCILE_RANGE)
     SHIPPED_OK = {'Match', 'More than submitted (likely preorder/backorder)'}
 
@@ -158,76 +187,114 @@ def get_asmodee_fully_shipped_orders():
     return {name for name, total in order_skus_total.items() if order_skus_ok.get(name, 0) == total}
 
 
-def mark_supplier_shipped(supplier):
-    """Core logic for all three buttons. For Asmodee, only orders that pass the
-    itemized reconciliation check are eligible. For Universal Dist/ACDD, every
-    order in the tracking tab needing that supplier is eligible unconditionally."""
+def mark_stage(supplier, stage):
+    """Generic handler for all (supplier, stage) button combinations.
+
+    For stage='shipped' and supplier='Asmodee', the itemized reconciliation
+    check still applies - only orders whose Asmodee SKUs fully matched are
+    eligible. Every other (supplier, stage) combination is unconditional:
+    clicking the button marks every order in the tracking tab that currently
+    needs this supplier at this stage.
+
+    An order already at dhg-status-inventory-queued is never downgraded -
+    it's already fully ready to pack from bin stock, so completion tags from
+    earlier pipeline stages would be a regression, not progress.
+    """
+    if supplier not in VALID_SUPPLIERS:
+        raise ValueError(f'supplier must be one of {sorted(VALID_SUPPLIERS)}')
+    if stage not in VALID_STAGES:
+        raise ValueError(f'stage must be one of {sorted(VALID_STAGES)}')
+
+    config = STAGE_CONFIG[stage]
+    stage_col = config['col']
 
     tracking_rows = sheets_get(AGG_SHEET_ID, TRACKING_RANGE)
     if not tracking_rows:
         return {'updated': [], 'completed': [], 'skipped': [], 'message': 'No rows in Shipment Tracking tab.'}
 
     eligible_orders = None
-    if supplier == 'Asmodee':
+    if supplier == 'Asmodee' and stage == 'shipped':
         eligible_orders = get_asmodee_fully_shipped_orders()
 
     updated_rows = []
     completed_order_names = []
     skipped_order_names = []
+    skipped_inventory_queued = []
+
+    # Pre-fetch current Shopify status for every order on the tracking tab so we
+    # can skip inventory-queued orders BEFORE touching their sheet row at all -
+    # not just before applying the completion tag.
+    order_names_on_sheet = [row[0] for row in tracking_rows if row]
+    current_statuses = {}
+    for name in order_names_on_sheet:
+        try:
+            _, status = get_order_id_and_current_status(name)
+            current_statuses[name] = status
+        except Exception:
+            current_statuses[name] = None
 
     for row in tracking_rows:
-        # Order # | Suppliers Needed | Suppliers Shipped So Far | Status
-        order_name = row[0] if len(row) > 0 else ''
-        suppliers_needed = row[1] if len(row) > 1 else ''
-        suppliers_shipped = row[2] if len(row) > 2 else ''
-        status = row[3] if len(row) > 3 else 'Pending'
+        row = row + [''] * (6 - len(row))  # pad to 6 columns in case sheet has short rows
+        order_name = row[0]
 
+        if current_statuses.get(order_name) == 'inventory-queued':
+            skipped_inventory_queued.append(order_name)
+            updated_rows.append(row)
+            continue
+
+        suppliers_needed = row[1]
         needed_set = {s.strip() for s in suppliers_needed.split(',') if s.strip()}
-        shipped_set = {s.strip() for s in suppliers_shipped.split(',') if s.strip()}
+        stage_so_far = {s.strip() for s in row[stage_col].split(',') if s.strip()}
 
-        if supplier not in needed_set or supplier in shipped_set or status == 'Complete':
-            updated_rows.append([order_name, suppliers_needed, suppliers_shipped, status])
+        if supplier not in needed_set or supplier in stage_so_far:
+            updated_rows.append(row)
             continue
 
         if eligible_orders is not None and order_name not in eligible_orders:
-            # Asmodee button clicked, but this order's Asmodee items didn't fully
-            # match the quote yet - leave it pending, don't mark shipped.
             skipped_order_names.append(order_name)
-            updated_rows.append([order_name, suppliers_needed, suppliers_shipped, status])
+            updated_rows.append(row)
             continue
 
-        shipped_set.add(supplier)
-        new_status = 'Complete' if shipped_set == needed_set else 'Pending'
-        updated_rows.append([order_name, suppliers_needed, ', '.join(sorted(shipped_set)), new_status])
+        stage_so_far.add(supplier)
+        row[stage_col] = ', '.join(sorted(stage_so_far))
 
-        if new_status == 'Complete':
+        stage_complete = stage_so_far == needed_set
+        if stage_complete:
+            row[OVERALL_STATUS_COL] = config['next_overall']
             completed_order_names.append(order_name)
+
+        updated_rows.append(row)
 
     # Write the updated tracking tab back
     if updated_rows:
         sheets_clear(AGG_SHEET_ID, TRACKING_RANGE)
-        sheets_put(AGG_SHEET_ID, f"'Shipment Tracking'!A2:D{len(updated_rows)+1}", updated_rows)
+        sheets_put(AGG_SHEET_ID, f"'Shipment Tracking'!A2:F{len(updated_rows)+1}", updated_rows)
 
-    # Tag completed orders in Shopify
+    # Apply the completion tag in Shopify for every order that just finished this stage
     tagged = []
     tag_errors = []
     for order_name in completed_order_names:
         try:
-            order_id = get_order_id_by_name(order_name)
-            if order_id:
-                tag_order_shipped_from_supplier(order_id)
-                tagged.append(order_name)
-            else:
+            order_id, current_status = get_order_id_and_current_status(order_name)
+            if not order_id:
                 tag_errors.append({'order': order_name, 'error': 'Order not found in Shopify'})
+                continue
+
+            tag = config['completion_tag']
+            if tag.startswith('dhg-status-') and current_status:
+                remove_status_tag(order_id, f'dhg-status-{current_status}')
+            apply_completion_tag(order_id, tag)
+            tagged.append(order_name)
         except Exception as e:
             tag_errors.append({'order': order_name, 'error': str(e)})
 
     return {
         'supplier': supplier,
-        'ordersMarkedForThisSupplier': len([r for r in updated_rows]) - len(skipped_order_names),
+        'stage': stage,
         'completedAndTagged': tagged,
         'tagErrors': tag_errors,
         'skippedNotYetFullyMatched': skipped_order_names,
+        'skippedAlreadyInventoryQueued': skipped_inventory_queued,
     }
 
 
@@ -240,12 +307,14 @@ class handler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length) if content_length else b'{}'
             payload = json.loads(body) if body else {}
             supplier = payload.get('supplier')
+            stage = payload.get('stage')
 
-            if supplier not in VALID_SUPPLIERS:
-                self._send_json(400, {'error': f'supplier must be one of {sorted(VALID_SUPPLIERS)}'})
+            try:
+                result = mark_stage(supplier, stage)
+            except ValueError as e:
+                self._send_json(400, {'error': str(e)})
                 return
 
-            result = mark_supplier_shipped(supplier)
             self._send_json(200, result)
 
         except Exception as e:
