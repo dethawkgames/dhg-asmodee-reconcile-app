@@ -3,78 +3,329 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Asmodee Quote Reconciliation</title>
+<title>Order Fulfillment Tracker — Detective Hawk Games</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Days+One&display=swap" rel="stylesheet">
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
-  h1 { font-size: 22px; }
-  .upload-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 40px; text-align: center; margin: 20px 0; }
-  .upload-zone.dragover { border-color: #4a7; background: #f0fff4; }
-  input[type=file] { margin: 10px 0; }
-  button { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; cursor: pointer; }
-  button:disabled { background: #999; cursor: not-allowed; }
-  table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
-  th { background: #f7f7f7; }
-  .status-match { color: #16a34a; }
-  .status-more { color: #d97706; }
-  .status-less { color: #dc2626; }
-  .status-missing { color: #dc2626; font-weight: 600; }
-  .status-preorder { color: #6366f1; font-weight: 600; }
-  .status-unexpected { color: #d97706; font-weight: 600; }
-  .summary { margin: 16px 0; padding: 12px; background: #f7f7f7; border-radius: 6px; font-size: 14px; }
-  .loading { color: #666; }
-  .error { color: #dc2626; padding: 12px; background: #fef2f2; border-radius: 6px; }
-  .shipped-section { margin-top: 40px; padding-top: 24px; border-top: 1px solid #eee; }
-  .shipped-buttons { display: flex; gap: 10px; margin: 12px 0; }
-  .shipped-btn { background: #16a34a; }
-  .shipped-btn:hover { background: #15803d; }
-  .shipped-result { margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 6px; font-size: 14px; }
+  :root {
+    --plum-dark: #38112F;
+    --plum: #58144B;
+    --coral: #EF3F45;
+    --coral-deep: #B12B2B;
+    --teal: #3BC0C6;
+    --teal-deep: #059B9C;
+    --gold: #FFD344;
+    --cream: #E2D4C3;
+    --paper: #FBF8F3;
+    --ink: #2A1622;
+    --ink-soft: #6b5a63;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .masthead {
+    background: linear-gradient(165deg, var(--plum-dark) 0%, var(--plum) 100%);
+    color: var(--cream);
+    padding: 36px 24px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .masthead::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 46px;
+    background-image: linear-gradient(transparent, transparent),
+      repeating-linear-gradient(90deg, rgba(255,211,68,0.10) 0 2px, transparent 2px 38px);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .masthead-inner { max-width: 980px; margin: 0 auto; position: relative; z-index: 1; }
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+  h1.title {
+    font-family: 'Days One', -apple-system, sans-serif;
+    font-size: 30px;
+    line-height: 1.15;
+    margin: 0 0 8px;
+    color: var(--cream);
+    letter-spacing: 0.01em;
+  }
+  .masthead p {
+    margin: 0;
+    font-size: 14.5px;
+    color: rgba(226, 212, 195, 0.85);
+    max-width: 640px;
+    line-height: 1.5;
+  }
+
+  .page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+
+  .card {
+    background: var(--paper);
+    border-radius: 14px;
+    padding: 28px;
+    box-shadow: 0 1px 2px rgba(56,17,47,0.06), 0 8px 24px rgba(56,17,47,0.07);
+    margin-bottom: 28px;
+    border: 1px solid rgba(56,17,47,0.06);
+  }
+
+  .card-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--teal-deep);
+    margin: 0 0 4px;
+  }
+  .card-label .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--teal);
+    display: inline-block;
+  }
+  h2.section-title {
+    font-family: 'Days One', -apple-system, sans-serif;
+    font-size: 19px;
+    margin: 0 0 6px;
+    color: var(--plum-dark);
+  }
+  .section-desc {
+    color: var(--ink-soft);
+    font-size: 13.5px;
+    line-height: 1.55;
+    margin: 0 0 20px;
+    max-width: 680px;
+  }
+
+  .upload-zone {
+    border: 2px dashed rgba(56,17,47,0.18);
+    border-radius: 12px;
+    padding: 36px 24px;
+    text-align: center;
+    background: rgba(59,192,198,0.04);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .upload-zone.dragover {
+    border-color: var(--teal);
+    background: rgba(59,192,198,0.10);
+  }
+  .upload-zone p { margin: 0 0 12px; color: var(--ink-soft); font-size: 14px; }
+  input[type=file] {
+    margin: 0 0 16px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+
+  button {
+    background: var(--coral);
+    color: white;
+    border: none;
+    padding: 11px 22px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.05s;
+    font-family: inherit;
+  }
+  button:hover:not(:disabled) { background: var(--coral-deep); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { background: #c9bdc4; cursor: not-allowed; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(56,17,47,0.08); }
+  th {
+    background: rgba(56,17,47,0.04);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    font-weight: 700;
+  }
+  tr:hover td { background: rgba(59,192,198,0.04); }
+
+  .status-match { color: #2f7a4f; font-weight: 600; }
+  .status-more { color: #b8762a; font-weight: 600; }
+  .status-less { color: var(--coral-deep); font-weight: 600; }
+  .status-missing { color: var(--coral-deep); font-weight: 700; }
+  .status-preorder { color: var(--teal-deep); font-weight: 700; }
+  .status-unexpected { color: #b8762a; font-weight: 600; }
+
+  .summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    margin: 18px 0 0;
+    padding: 16px 18px;
+    background: var(--plum-dark);
+    color: var(--cream);
+    border-radius: 10px;
+    font-size: 13.5px;
+  }
+  .summary .stat strong {
+    font-family: 'Days One', sans-serif;
+    font-size: 19px;
+    color: var(--gold);
+    display: block;
+    line-height: 1.2;
+  }
+  .summary .stat span { color: rgba(226,212,195,0.75); font-size: 12px; }
+
+  .loading { color: var(--ink-soft); font-size: 14px; }
+  .loading::before { content: "⏳ "; }
+  .error {
+    color: #fff;
+    background: var(--coral-deep);
+    padding: 13px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .footnote { color: var(--ink-soft); font-size: 12.5px; margin-top: 16px; }
+
+  .stage-block { margin-bottom: 24px; }
+  .stage-block:last-child { margin-bottom: 0; }
+  .stage-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .stage-num {
+    font-family: 'Days One', sans-serif;
+    font-size: 12px;
+    color: var(--paper);
+    background: var(--plum);
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .stage-title { font-size: 15px; font-weight: 700; color: var(--plum-dark); margin: 0; }
+
+  .stage-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stage-btn {
+    background: var(--paper);
+    border: 1.5px solid rgba(56,17,47,0.16);
+    color: var(--plum-dark);
+  }
+  .stage-btn:hover:not(:disabled) {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: white;
+  }
+
+  .shipped-result {
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: rgba(59,192,198,0.08);
+    border-left: 3px solid var(--teal);
+    border-radius: 0 8px 8px 0;
+    font-size: 13.5px;
+    line-height: 1.6;
+  }
+  .shipped-result .note-warn { color: #b8762a; }
+  .shipped-result .note-muted { color: var(--ink-soft); }
+  .shipped-result .note-error { color: var(--coral-deep); }
 </style>
 </head>
 <body>
 
-<h1>Asmodee Quote Reconciliation</h1>
-<p>Upload this week's Asmodee shipping quote PDF to compare it against what was submitted in the Asmodee Order tab.</p>
-
-<div class="upload-zone" id="dropZone">
-  <p>Drop the quote PDF here, or choose a file</p>
-  <input type="file" id="fileInput" accept="application/pdf">
-  <br>
-  <button id="uploadBtn" disabled>Compare</button>
+<div class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">Detective Hawk Games · Internal Tool</p>
+    <h1 class="title">Order Fulfillment Tracker</h1>
+    <p>Reconcile Asmodee shipments against what was submitted, and move orders through the supplier pipeline — ordered, shipped, and arrived.</p>
+  </div>
 </div>
 
-<div id="result"></div>
+<div class="page">
 
-<div class="shipped-section">
-  <h2 style="font-size: 18px;">Order Pipeline</h2>
-  <p style="color: #666; font-size: 14px;">
-    Click each supplier as it reaches a stage. Asmodee's "Shipped" stage checks the latest reconciliation
-    results to only mark orders where every Asmodee item fully matched; everything else is unconditional
-    since there's no itemized confirmation available for it.
-  </p>
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Quote Reconciliation</p>
+    <h2 class="section-title">Compare This Week's Asmodee Quote</h2>
+    <p class="section-desc">Upload the shipping quote PDF to compare it against what was submitted in the Asmodee Order tab.</p>
 
-  <h3 style="font-size: 15px; margin-top: 20px;">Ordered from Supplier</h3>
-  <div class="shipped-buttons">
-    <button class="shipped-btn" onclick="markStage('Asmodee', 'ordered')">Asmodee - Ordered</button>
-    <button class="shipped-btn" onclick="markStage('Universal Dist', 'ordered')">Universal Dist - Ordered</button>
-    <button class="shipped-btn" onclick="markStage('ACDD', 'ordered')">ACDD - Ordered</button>
+    <div class="upload-zone" id="dropZone">
+      <p>Drop the quote PDF here, or choose a file</p>
+      <input type="file" id="fileInput" accept="application/pdf">
+      <br>
+      <button id="uploadBtn" disabled>Compare</button>
+    </div>
+
+    <div id="result"></div>
   </div>
 
-  <h3 style="font-size: 15px; margin-top: 20px;">Shipped from Supplier</h3>
-  <div class="shipped-buttons">
-    <button class="shipped-btn" onclick="markStage('Asmodee', 'shipped')">Asmodee - Shipped</button>
-    <button class="shipped-btn" onclick="markStage('Universal Dist', 'shipped')">Universal Dist - Shipped</button>
-    <button class="shipped-btn" onclick="markStage('ACDD', 'shipped')">ACDD - Shipped</button>
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Supplier Pipeline</p>
+    <h2 class="section-title">Order Pipeline</h2>
+    <p class="section-desc">
+      Click each supplier as it reaches a stage. Asmodee's "Shipped" stage checks the latest reconciliation
+      results and only marks orders where every Asmodee item fully matched; everything else is unconditional,
+      since there's no itemized confirmation available for it.
+    </p>
+
+    <div class="stage-block">
+      <div class="stage-head">
+        <span class="stage-num">1</span>
+        <p class="stage-title">Ordered from Supplier</p>
+      </div>
+      <div class="stage-buttons">
+        <button class="stage-btn" onclick="markStage('Asmodee', 'ordered')">Asmodee</button>
+        <button class="stage-btn" onclick="markStage('Universal Dist', 'ordered')">Universal Dist</button>
+        <button class="stage-btn" onclick="markStage('ACDD', 'ordered')">ACDD</button>
+      </div>
+    </div>
+
+    <div class="stage-block">
+      <div class="stage-head">
+        <span class="stage-num">2</span>
+        <p class="stage-title">Shipped from Supplier</p>
+      </div>
+      <div class="stage-buttons">
+        <button class="stage-btn" onclick="markStage('Asmodee', 'shipped')">Asmodee</button>
+        <button class="stage-btn" onclick="markStage('Universal Dist', 'shipped')">Universal Dist</button>
+        <button class="stage-btn" onclick="markStage('ACDD', 'shipped')">ACDD</button>
+      </div>
+    </div>
+
+    <div class="stage-block">
+      <div class="stage-head">
+        <span class="stage-num">3</span>
+        <p class="stage-title">Shipment Arrived (at our store)</p>
+      </div>
+      <div class="stage-buttons">
+        <button class="stage-btn" onclick="markStage('Asmodee', 'arrived')">Asmodee</button>
+        <button class="stage-btn" onclick="markStage('Universal Dist', 'arrived')">Universal Dist</button>
+        <button class="stage-btn" onclick="markStage('ACDD', 'arrived')">ACDD</button>
+      </div>
+    </div>
+
+    <div id="shippedResult"></div>
   </div>
 
-  <h3 style="font-size: 15px; margin-top: 20px;">Shipment Arrived (at our store)</h3>
-  <div class="shipped-buttons">
-    <button class="shipped-btn" onclick="markStage('Asmodee', 'arrived')">Asmodee - Shipment Arrived</button>
-    <button class="shipped-btn" onclick="markStage('Universal Dist', 'arrived')">Universal Dist - Shipment Arrived</button>
-    <button class="shipped-btn" onclick="markStage('ACDD', 'arrived')">ACDD - Shipment Arrived</button>
-  </div>
-
-  <div id="shippedResult"></div>
 </div>
 
 <script>
@@ -137,10 +388,10 @@ uploadBtn.addEventListener('click', async () => {
     const issueCount = data.results.length - matchCount;
 
     let html = `<div class="summary">
-      <strong>${data.itemsInQuote}</strong> items in quote &middot;
-      <strong>${data.itemsSubmitted}</strong> items submitted &middot;
-      <strong>${matchCount}</strong> matched &middot;
-      <strong>${issueCount}</strong> need a look
+      <div class="stat"><strong>${data.itemsInQuote}</strong><span>in quote</span></div>
+      <div class="stat"><strong>${data.itemsSubmitted}</strong><span>submitted</span></div>
+      <div class="stat"><strong>${matchCount}</strong><span>matched</span></div>
+      <div class="stat"><strong>${issueCount}</strong><span>need a look</span></div>
     </div>`;
 
     html += '<table><thead><tr><th>SKU</th><th>Title</th><th>Submitted</th><th>Quoted</th><th>Status</th></tr></thead><tbody>';
@@ -155,7 +406,7 @@ uploadBtn.addEventListener('click', async () => {
       </tr>`;
     }
     html += '</tbody></table>';
-    html += '<p style="color:#666; font-size:13px; margin-top:16px;">Also saved to the "Latest Reconciliation" tab in the aggregation sheet.</p>';
+    html += '<p class="footnote">Also saved to the "Latest Reconciliation" tab in the aggregation sheet.</p>';
 
     resultDiv.innerHTML = html;
   } catch (err) {
@@ -188,13 +439,13 @@ async function markStage(supplier, stage) {
       html += `: ${data.completedAndTagged.join(', ')}`;
     }
     if (data.skippedNotYetFullyMatched && data.skippedNotYetFullyMatched.length) {
-      html += `<br><span style="color:#d97706;">${data.skippedNotYetFullyMatched.length} order(s) not yet fully matched on the quote, left pending: ${data.skippedNotYetFullyMatched.join(', ')}</span>`;
+      html += `<br><span class="note-warn">${data.skippedNotYetFullyMatched.length} order(s) not yet fully matched on the quote, left pending: ${data.skippedNotYetFullyMatched.join(', ')}</span>`;
     }
     if (data.skippedAlreadyInventoryQueued && data.skippedAlreadyInventoryQueued.length) {
-      html += `<br><span style="color:#666;">${data.skippedAlreadyInventoryQueued.length} order(s) already inventory-queued (ready to pack from bins), left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
+      html += `<br><span class="note-muted">${data.skippedAlreadyInventoryQueued.length} order(s) already inventory-queued (ready to pack from bins), left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
     }
     if (data.tagErrors && data.tagErrors.length) {
-      html += `<br><span style="color:#dc2626;">${data.tagErrors.length} order(s) had tagging errors - check manually.</span>`;
+      html += `<br><span class="note-error">${data.tagErrors.length} order(s) had tagging errors - check manually.</span>`;
     }
     html += `</div>`;
     shippedResultDiv.innerHTML = html;
