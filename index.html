@@ -203,6 +203,24 @@
   }
   .footnote { color: var(--ink-soft); font-size: 12.5px; margin-top: 16px; }
 
+  .qr-supplier-head {
+    font-size: 13px; font-weight: 700; color: var(--plum-dark);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 20px 0 8px;
+  }
+  .qr-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid rgba(56,17,47,0.08);
+  }
+  .qr-row-title { flex: 1; font-size: 14px; }
+  .qr-row-sku { color: var(--ink-soft); font-size: 12px; }
+  .qr-row input[type=number] {
+    width: 64px; padding: 8px; font-size: 16px;
+    border: 1.5px solid rgba(56,17,47,0.18); border-radius: 6px;
+    text-align: center;
+  }
+  .qr-save-bar { margin-top: 18px; }
+
   .stage-block { margin-bottom: 24px; }
   .stage-block:last-child { margin-bottom: 0; }
   .stage-head {
@@ -291,6 +309,24 @@
     </div>
 
     <div id="udResult"></div>
+  </div>
+
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
+    <h2 class="section-title">Record Quantity Received</h2>
+    <p class="section-desc">For this week's Universal Dist and ACDD orders, neither supplier gives itemized shipment confirmation - record what actually arrived per item so the surplus calculation below is accurate. Defaults to the ordered quantity until you adjust it.</p>
+
+    <button id="qrLoadBtn">Load This Week's Items</button>
+    <div id="qrResult"></div>
+  </div>
+
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
+    <h2 class="section-title">Identify Surplus</h2>
+    <p class="section-desc">Run this once you're done picking orders out of this week's supplier staging areas. For each SKU: surplus = quantity arrived (Asmodee's reconciled quote, or the recorded/ordered quantity for UD/ACDD) minus the total still needed across all unfulfilled orders from the last 30 days. Whatever's left, load into bins.</p>
+
+    <button id="surplusBtn">Identify Surplus</button>
+    <div id="surplusResult"></div>
   </div>
 
   <div class="card">
@@ -517,6 +553,126 @@ udUploadBtn.addEventListener('click', async () => {
   }
 
   udUploadBtn.disabled = false;
+});
+
+// ── Record Quantity Received ────────────────────────────────────────────────
+const qrLoadBtn = document.getElementById('qrLoadBtn');
+const qrResultDiv = document.getElementById('qrResult');
+
+qrLoadBtn.addEventListener('click', async () => {
+  qrLoadBtn.disabled = true;
+  qrResultDiv.innerHTML = '<p class="loading">Loading this week\\'s Universal Dist and ACDD items...</p>';
+
+  try {
+    const res = await fetch('/api/quantity-received');
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      qrResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      qrLoadBtn.disabled = false;
+      return;
+    }
+
+    if (!data.items.length) {
+      qrResultDiv.innerHTML = '<p class="footnote">No Universal Dist or ACDD items in this week\\'s Order tabs.</p>';
+      qrLoadBtn.disabled = false;
+      return;
+    }
+
+    let html = '';
+    for (const supplier of ['Universal Dist', 'ACDD']) {
+      const items = data.items.filter(i => i.supplier === supplier);
+      if (!items.length) continue;
+      html += `<p class="qr-supplier-head">${supplier}</p>`;
+      for (const item of items) {
+        const defaultVal = item.receivedQty !== '' ? item.receivedQty : item.orderedQty;
+        html += `<div class="qr-row" data-supplier="${supplier}" data-row="${item.rowNumber}">
+          <div>
+            <div class="qr-row-title">${item.title}</div>
+            <div class="qr-row-sku">${item.sku} &middot; ordered ${item.orderedQty}</div>
+          </div>
+          <input type="number" min="0" class="qr-input" value="${defaultVal}">
+        </div>`;
+      }
+    }
+    html += `<div class="qr-save-bar"><button id="qrSaveBtn">Save All</button></div>`;
+    qrResultDiv.innerHTML = html;
+
+    document.getElementById('qrSaveBtn').addEventListener('click', async () => {
+      const rows = qrResultDiv.querySelectorAll('.qr-row');
+      const updates = Array.from(rows).map(row => ({
+        supplier: row.dataset.supplier,
+        rowNumber: parseInt(row.dataset.row, 10),
+        receivedQty: row.querySelector('.qr-input').value,
+      }));
+
+      const saveBtn = document.getElementById('qrSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        const saveRes = await fetch('/api/quantity-received', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates }),
+        });
+        const saveData = await saveRes.json();
+        if (!saveRes.ok || saveData.error) {
+          saveBtn.textContent = 'Save failed - try again';
+          saveBtn.disabled = false;
+          return;
+        }
+        saveBtn.textContent = `Saved ${saveData.updated} item(s)`;
+      } catch (err) {
+        saveBtn.textContent = 'Save failed - try again';
+        saveBtn.disabled = false;
+      }
+    });
+  } catch (err) {
+    qrResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+
+  qrLoadBtn.disabled = false;
+});
+
+// ── Identify Surplus ─────────────────────────────────────────────────────────
+const surplusBtn = document.getElementById('surplusBtn');
+const surplusResultDiv = document.getElementById('surplusResult');
+
+surplusBtn.addEventListener('click', async () => {
+  surplusBtn.disabled = true;
+  surplusResultDiv.innerHTML = '<p class="loading">Comparing arrived quantities against everything still needed...</p>';
+
+  try {
+    const res = await fetch('/api/identify-surplus', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      surplusResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      surplusBtn.disabled = false;
+      return;
+    }
+
+    let html = `<div class="summary">
+      <div class="stat"><strong>${data.skusChecked}</strong><span>SKUs checked</span></div>
+      <div class="stat"><strong>${data.surplusCount}</strong><span>surplus items</span></div>
+    </div>`;
+
+    if (data.results.length) {
+      html += '<table><thead><tr><th>SKU</th><th>Title</th><th>Surplus Qty</th></tr></thead><tbody>';
+      for (const [sku, title, qty] of data.results) {
+        html += `<tr><td>${sku}</td><td>${title}</td><td>${qty}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<p class="footnote">No surplus this week - everything that arrived is still spoken for.</p>';
+    }
+    html += '<p class="footnote">Also saved to the "Surplus to Bin" tab.</p>';
+
+    surplusResultDiv.innerHTML = html;
+  } catch (err) {
+    surplusResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+
+  surplusBtn.disabled = false;
 });
 
 async function markStage(supplier, stage) {

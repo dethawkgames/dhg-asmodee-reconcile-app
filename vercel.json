@@ -5,6 +5,12 @@
     },
     "api/reconcile-ud.py": {
       "maxDuration": 30
+    },
+    "api/quantity-received.py": {
+      "maxDuration": 30
+    },
+    "api/identify-surplus.py": {
+      "maxDuration": 30
     }
   }
 }
