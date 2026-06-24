@@ -279,6 +279,21 @@
   </div>
 
   <div class="card">
+    <p class="card-label"><span class="dot"></span>Invoice Reconciliation</p>
+    <h2 class="section-title">Compare Universal Dist Invoices</h2>
+    <p class="section-desc">Upload the invoice(s) you received (primary + secondary warehouse, if applicable) to compare against what's currently in the Universal Dist Order tab. Matches by barcode, falling back to SKU when a barcode isn't mapped yet.</p>
+
+    <div class="upload-zone" id="udDropZone">
+      <p>Drop one or more invoice .xlsx files here, or choose files</p>
+      <input type="file" id="udFileInput" accept=".xlsx" multiple>
+      <br>
+      <button id="udUploadBtn" disabled>Compare</button>
+    </div>
+
+    <div id="udResult"></div>
+  </div>
+
+  <div class="card">
     <p class="card-label"><span class="dot"></span>Supplier Pipeline</p>
     <h2 class="section-title">Order Pipeline</h2>
     <p class="section-desc">
@@ -414,6 +429,94 @@ uploadBtn.addEventListener('click', async () => {
   }
 
   uploadBtn.disabled = false;
+});
+
+const udFileInput = document.getElementById('udFileInput');
+const udUploadBtn = document.getElementById('udUploadBtn');
+const udDropZone = document.getElementById('udDropZone');
+const udResultDiv = document.getElementById('udResult');
+
+let udSelectedFiles = [];
+
+udFileInput.addEventListener('change', (e) => {
+  udSelectedFiles = Array.from(e.target.files);
+  udUploadBtn.disabled = udSelectedFiles.length === 0;
+});
+
+udDropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  udDropZone.classList.add('dragover');
+});
+udDropZone.addEventListener('dragleave', () => udDropZone.classList.remove('dragover'));
+udDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  udDropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    udSelectedFiles = Array.from(e.dataTransfer.files);
+    udUploadBtn.disabled = false;
+  }
+});
+
+function udStatusClass(status) {
+  if (status === 'Match') return 'status-match';
+  if (status.includes('More than')) return 'status-more';
+  if (status.includes('Less than')) return 'status-less';
+  if (status.includes('Missing')) return 'status-missing';
+  if (status.includes('Pre-Order')) return 'status-preorder';
+  if (status.includes('not submitted')) return 'status-unexpected';
+  return '';
+}
+
+udUploadBtn.addEventListener('click', async () => {
+  if (!udSelectedFiles.length) return;
+
+  udUploadBtn.disabled = true;
+  udResultDiv.innerHTML = '<p class="loading">Parsing invoice(s) and comparing against the Universal Dist Order tab...</p>';
+
+  const formData = new FormData();
+  for (const f of udSelectedFiles) formData.append('file', f);
+
+  try {
+    const res = await fetch('/api/reconcile-ud', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      udResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      udUploadBtn.disabled = false;
+      return;
+    }
+
+    const matchCount = data.results.filter(r => r[5] === 'Match').length;
+    const issueCount = data.results.length - matchCount;
+
+    let html = `<div class="summary">
+      <div class="stat"><strong>${data.itemsInInvoices}</strong><span>in invoice(s)</span></div>
+      <div class="stat"><strong>${data.itemsSubmitted}</strong><span>submitted</span></div>
+      <div class="stat"><strong>${matchCount}</strong><span>matched</span></div>
+      <div class="stat"><strong>${issueCount}</strong><span>need a look</span></div>
+    </div>`;
+
+    html += '<table><thead><tr><th>SKU</th><th>Barcode</th><th>Title</th><th>Submitted</th><th>Invoice Qty</th><th>Status</th></tr></thead><tbody>';
+    for (const row of data.results) {
+      const [sku, barcode, title, submitted, invQty, status] = row;
+      html += `<tr>
+        <td>${sku}</td>
+        <td>${barcode}</td>
+        <td>${title}</td>
+        <td>${submitted}</td>
+        <td>${invQty}</td>
+        <td class="${udStatusClass(status)}">${status}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    html += `<p class="footnote">Parsed ${data.invoicesParsed.map(f => `${f.filename} (${f.lineItems} items)`).join(', ')}. Also saved to the "Latest UD Reconciliation" tab.</p>`;
+
+    udResultDiv.innerHTML = html;
+  } catch (err) {
+    udResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+
+  udUploadBtn.disabled = false;
 });
 
 async function markStage(supplier, stage) {

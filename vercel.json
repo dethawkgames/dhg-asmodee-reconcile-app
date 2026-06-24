@@ -2,6 +2,9 @@
   "functions": {
     "api/reconcile.py": {
       "maxDuration": 30
+    },
+    "api/reconcile-ud.py": {
+      "maxDuration": 30
     }
   }
 }
