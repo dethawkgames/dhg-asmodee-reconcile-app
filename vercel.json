@@ -14,6 +14,9 @@
     },
     "api/box-size.py": {
       "maxDuration": 30
+    },
+    "api/acdd-scrape-intake.py": {
+      "maxDuration": 30
     }
   }
 }
