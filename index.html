@@ -221,6 +221,30 @@
   }
   .qr-save-bar { margin-top: 18px; }
 
+  .box-dims-row {
+    display: flex; align-items: end; gap: 14px; flex-wrap: wrap; margin: 10px 0 16px;
+  }
+  .box-dims-row label {
+    display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+    color: var(--ink-soft); font-weight: 600;
+  }
+  .box-dims-row input[type=number] {
+    width: 70px; padding: 8px; font-size: 16px;
+    border: 1.5px solid rgba(56,17,47,0.18); border-radius: 6px;
+  }
+  .box-fit-options { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+  .box-fit-card {
+    flex: 1; min-width: 200px; border: 1.5px solid rgba(56,17,47,0.12);
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .box-fit-card h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--plum-dark); }
+  .box-fit-card .box-size-big { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .box-fit-card .box-meta { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 10px; }
+  .box-inventory-details { margin-top: 18px; font-size: 13px; }
+  .box-inventory-details summary { cursor: pointer; color: var(--plum-dark); font-weight: 600; }
+  .box-inv-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(56,17,47,0.06); }
+  .box-inv-row.low { color: #B3261E; font-weight: 600; }
+
   .stage-block { margin-bottom: 24px; }
   .stage-block:last-child { margin-bottom: 0; }
   .stage-head {
@@ -327,6 +351,26 @@
 
     <button id="surplusBtn">Identify Surplus</button>
     <div id="surplusResult"></div>
+  </div>
+
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Packing</p>
+    <h2 class="section-title">Box Size Recommendation</h2>
+    <p class="section-desc">Measure the stacked pile of items for an order (combined length, width, height) and get the smallest box that fits. "Insured fit" leaves 2" of clearance on each side; "Tight fit" has none — your call on the risk tradeoff. Satchels only show up when something's genuinely flat.</p>
+
+    <div class="box-dims-row">
+      <label>L <input type="number" id="boxLength" min="0" step="0.5"></label>
+      <label>W <input type="number" id="boxWidth" min="0" step="0.5"></label>
+      <label>H <input type="number" id="boxHeight" min="0" step="0.5"></label>
+      <button id="boxRecommendBtn">Recommend Box</button>
+    </div>
+
+    <div id="boxResult"></div>
+
+    <details class="box-inventory-details">
+      <summary>View box inventory</summary>
+      <div id="boxInventoryList"><p class="loading">Loading...</p></div>
+    </details>
   </div>
 
   <div class="card">
@@ -673,6 +717,106 @@ surplusBtn.addEventListener('click', async () => {
   }
 
   surplusBtn.disabled = false;
+});
+
+// ── Box Size Recommendation ──────────────────────────────────────────────────
+const boxRecommendBtn = document.getElementById('boxRecommendBtn');
+const boxResultDiv = document.getElementById('boxResult');
+const boxInventoryList = document.getElementById('boxInventoryList');
+
+function renderBoxFitCard(label, fit) {
+  if (!fit) {
+    return `<div class="box-fit-card"><h4>${label}</h4><p class="footnote">No box on the active list fits this pile.</p></div>`;
+  }
+  return `<div class="box-fit-card" data-size="${fit.size}">
+    <h4>${label}</h4>
+    <div class="box-size-big">${fit.size}</div>
+    <div class="box-meta">${fit.type} &middot; ${fit.onHand} on hand${fit.lowStock ? ' &middot; <strong>low stock</strong>' : ''}</div>
+    <button class="box-use-btn" data-size="${fit.size}">Used this one</button>
+  </div>`;
+}
+
+async function loadBoxInventory() {
+  try {
+    const res = await fetch('/api/box-size');
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      boxInventoryList.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      return;
+    }
+    let html = '';
+    for (const b of data.boxes) {
+      html += `<div class="box-inv-row ${b.lowStock ? 'low' : ''}">
+        <span>${b.size} (${b.type})</span><span>${b.onHand}</span>
+      </div>`;
+    }
+    boxInventoryList.innerHTML = html;
+  } catch (err) {
+    boxInventoryList.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+}
+loadBoxInventory();
+
+boxRecommendBtn.addEventListener('click', async () => {
+  const length = parseFloat(document.getElementById('boxLength').value);
+  const width = parseFloat(document.getElementById('boxWidth').value);
+  const height = parseFloat(document.getElementById('boxHeight').value);
+  if (!length || !width || !height) {
+    boxResultDiv.innerHTML = '<div class="error">Enter length, width, and height.</div>';
+    return;
+  }
+
+  boxRecommendBtn.disabled = true;
+  boxResultDiv.innerHTML = '<p class="loading">Finding the smallest box that fits...</p>';
+
+  try {
+    const res = await fetch('/api/box-size', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'recommend', length, width, height }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      boxResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      boxRecommendBtn.disabled = false;
+      return;
+    }
+
+    boxResultDiv.innerHTML = `<div class="box-fit-options">
+      ${renderBoxFitCard('Insured fit (+2")', data.insuredFit)}
+      ${renderBoxFitCard('Tight fit (exact)', data.tightFit)}
+    </div>`;
+
+    boxResultDiv.querySelectorAll('.box-use-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const size = btn.dataset.size;
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        try {
+          const useRes = await fetch('/api/box-size', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'use', size }),
+          });
+          const useData = await useRes.json();
+          if (!useRes.ok || useData.error) {
+            btn.textContent = 'Failed - try again';
+            btn.disabled = false;
+            return;
+          }
+          btn.textContent = `Used - ${useData.onHand} left`;
+          loadBoxInventory();
+        } catch (err) {
+          btn.textContent = 'Failed - try again';
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (err) {
+    boxResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+
+  boxRecommendBtn.disabled = false;
 });
 
 async function markStage(supplier, stage) {

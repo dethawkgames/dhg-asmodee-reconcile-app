@@ -11,6 +11,9 @@
     },
     "api/identify-surplus.py": {
       "maxDuration": 30
+    },
+    "api/box-size.py": {
+      "maxDuration": 30
     }
   }
 }
