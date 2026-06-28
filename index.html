@@ -605,7 +605,7 @@ const qrResultDiv = document.getElementById('qrResult');
 
 qrLoadBtn.addEventListener('click', async () => {
   qrLoadBtn.disabled = true;
-  qrResultDiv.innerHTML = '<p class="loading">Loading this week\\'s Universal Dist and ACDD items...</p>';
+  qrResultDiv.innerHTML = '<p class="loading">Loading this week\'s Universal Dist and ACDD items...</p>';
 
   try {
     const res = await fetch('/api/quantity-received');
@@ -617,7 +617,7 @@ qrLoadBtn.addEventListener('click', async () => {
     }
 
     if (!data.items.length) {
-      qrResultDiv.innerHTML = '<p class="footnote">No Universal Dist or ACDD items in this week\\'s Order tabs.</p>';
+      qrResultDiv.innerHTML = '<p class="footnote">No Universal Dist or ACDD items in this week\'s Order tabs.</p>';
       qrLoadBtn.disabled = false;
       return;
     }
