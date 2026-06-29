@@ -238,8 +238,13 @@
     border-radius: 10px; padding: 14px 16px;
   }
   .box-fit-card h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--plum-dark); }
-  .box-fit-card .box-size-big { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-  .box-fit-card .box-meta { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 10px; }
+  .box-option-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+  .box-option-row .box-size-big { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
+  .box-option-row .box-meta { color: var(--ink-soft); font-size: 12.5px; }
+  .box-alt-details { margin-top: 10px; font-size: 13px; border-top: 1px solid rgba(56,17,47,0.08); padding-top: 8px; }
+  .box-alt-details summary { cursor: pointer; color: var(--plum-dark); font-weight: 600; margin-bottom: 4px; }
+  .box-alt-details .box-option-row { padding: 6px 0; border-bottom: 1px solid rgba(56,17,47,0.06); }
+  .box-alt-details .box-option-row .box-size-big { font-size: 17px; }
   .box-inventory-details { margin-top: 18px; font-size: 13px; }
   .box-inventory-details summary { cursor: pointer; color: var(--plum-dark); font-weight: 600; }
   .box-inv-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(56,17,47,0.06); }
@@ -724,14 +729,31 @@ const boxRecommendBtn = document.getElementById('boxRecommendBtn');
 const boxResultDiv = document.getElementById('boxResult');
 const boxInventoryList = document.getElementById('boxInventoryList');
 
-function renderBoxFitCard(label, fit) {
-  if (!fit) {
+function renderBoxFitSection(label, options) {
+  if (!options.length) {
     return `<div class="box-fit-card"><h4>${label}</h4><p class="footnote">No box on the active list fits this pile.</p></div>`;
   }
-  return `<div class="box-fit-card" data-size="${fit.size}">
+  const top = options[0];
+  const alternatives = options.slice(1);
+  let html = `<div class="box-fit-card">
     <h4>${label}</h4>
-    <div class="box-size-big">${fit.size}</div>
-    <div class="box-meta">${fit.type} &middot; ${fit.onHand} on hand${fit.lowStock ? ' &middot; <strong>low stock</strong>' : ''}</div>
+    ${renderBoxOptionRow(top, true)}`;
+  if (alternatives.length) {
+    html += `<details class="box-alt-details">
+      <summary>${alternatives.length} other size${alternatives.length > 1 ? 's' : ''} that would also work</summary>
+      ${alternatives.map(b => renderBoxOptionRow(b, false)).join('')}
+    </details>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderBoxOptionRow(fit, isPrimary) {
+  return `<div class="box-option-row ${isPrimary ? 'primary' : ''}" data-size="${fit.size}">
+    <div>
+      <div class="box-size-big">${fit.size}</div>
+      <div class="box-meta">${fit.type} &middot; ${fit.onHand} on hand${fit.onHand <= 0 ? ' &middot; <strong>out of stock</strong>' : fit.lowStock ? ' &middot; <strong>low stock</strong>' : ''}</div>
+    </div>
     <button class="box-use-btn" data-size="${fit.size}">Used this one</button>
   </div>`;
 }
@@ -783,8 +805,8 @@ boxRecommendBtn.addEventListener('click', async () => {
     }
 
     boxResultDiv.innerHTML = `<div class="box-fit-options">
-      ${renderBoxFitCard('Insured fit (+2")', data.insuredFit)}
-      ${renderBoxFitCard('Tight fit (exact)', data.tightFit)}
+      ${renderBoxFitSection('Insured fit (+2")', data.insuredFitOptions)}
+      ${renderBoxFitSection('Tight fit (exact)', data.tightFitOptions)}
     </div>`;
 
     boxResultDiv.querySelectorAll('.box-use-btn').forEach(btn => {

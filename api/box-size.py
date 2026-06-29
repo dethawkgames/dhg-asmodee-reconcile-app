@@ -70,22 +70,25 @@ def load_boxes():
     return boxes
 
 
-def find_best_fit(pile_dims, boxes, clearance):
-    """pile_dims: [L, W, H] sorted desc. Returns the smallest-volume box (by
-    physical dimension, not by on-hand count) where every sorted box
-    dimension >= corresponding sorted pile dimension + clearance, allowing
-    any pile orientation. Flat mailers naturally get excluded for anything
-    with real height, since their own height dimension is tiny."""
+def find_all_fits(pile_dims, boxes, clearance):
+    """pile_dims: [L, W, H] sorted desc. Returns every box where every sorted
+    box dimension >= corresponding sorted pile dimension + clearance,
+    allowing any pile orientation. Flat mailers naturally get excluded for
+    anything with real height, since their own height dimension is tiny.
+
+    Sorted so the recommended default is the smallest box that's actually in
+    stock; out-of-stock boxes are still included (so a 0-on-hand box never
+    gets silently recommended), just ranked after every in-stock option of
+    the same or smaller size. The full list lets the picker choose any
+    fitting size, not just the top one."""
     needed = [d + clearance for d in pile_dims]
     fitting = []
     for box in boxes:
         if all(box['dims'][i] >= needed[i] for i in range(3)):
             volume = box['dims'][0] * box['dims'][1] * box['dims'][2]
             fitting.append((volume, box))
-    if not fitting:
-        return None
-    fitting.sort(key=lambda x: x[0])
-    return fitting[0][1]
+    fitting.sort(key=lambda x: (x[1]['onHand'] <= 0, x[0]))
+    return [b for _, b in fitting]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -114,18 +117,16 @@ class handler(BaseHTTPRequestHandler):
                 pile_dims = sorted([length, width, height], reverse=True)
 
                 boxes = load_boxes()
-                insured = find_best_fit(pile_dims, boxes, clearance=2)
-                tight = find_best_fit(pile_dims, boxes, clearance=0)
+                insured_options = find_all_fits(pile_dims, boxes, clearance=2)
+                tight_options = find_all_fits(pile_dims, boxes, clearance=0)
 
                 def fmt(b):
-                    if not b:
-                        return None
                     return {'size': b['size'], 'type': b['type'], 'onHand': b['onHand'], 'lowStock': b['onHand'] < LOW_STOCK_THRESHOLD}
 
                 self._send_json(200, {
                     'success': True,
-                    'insuredFit': fmt(insured),
-                    'tightFit': fmt(tight),
+                    'insuredFitOptions': [fmt(b) for b in insured_options],
+                    'tightFitOptions': [fmt(b) for b in tight_options],
                 })
 
             elif action == 'use':
