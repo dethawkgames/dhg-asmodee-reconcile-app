@@ -5,7 +5,6 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from http.server import BaseHTTPRequestHandler
-
 import jwt
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
@@ -37,7 +36,6 @@ def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
         sa_key = base64.b64decode(raw_key).decode('utf-8')
     else:
         sa_key = raw_key.replace('\\n', '\n')
-
     now = int(time.time())
     payload = {
         'iss': sa_email,
@@ -47,17 +45,14 @@ def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
         'iat': now,
     }
     assertion = jwt.encode(payload, sa_key, algorithm='RS256')
-
     data = urllib.parse.urlencode({
         'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         'assertion': assertion,
     }).encode()
-
     req = urllib.request.Request('https://oauth2.googleapis.com/token', data=data, method='POST')
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result['access_token']
-
 
 def sheets_get(spreadsheet_id, range_str):
     token = get_google_token()
@@ -66,7 +61,6 @@ def sheets_get(spreadsheet_id, range_str):
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result.get('values', [])
-
 
 def sheets_put(spreadsheet_id, range_str, values):
     token = get_google_token()
@@ -79,14 +73,12 @@ def sheets_put(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
-
 def sheets_clear(spreadsheet_id, range_str):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
     req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
-
 
 # ── Shopify auth + tagging ──────────────────────────────────────────────────
 
@@ -105,7 +97,6 @@ def get_shopify_token():
         result = json.loads(resp.read())
     return result['access_token']
 
-
 def shopify_graphql(query, variables=None):
     token = get_shopify_token()
     body = json.dumps({'query': query, 'variables': variables or {}}).encode()
@@ -120,41 +111,40 @@ def shopify_graphql(query, variables=None):
         raise Exception(f"Shopify GraphQL errors: {result['errors']}")
     return result['data']
 
-
 def get_order_id_and_current_status(order_name):
+    """Returns (id, dhg-status tag suffix, displayFulfillmentStatus, cancelledAt)."""
     data = shopify_graphql('''
         query getOrder($q: String!) {
-          orders(first: 1, query: $q) { edges { node { id name tags } } }
+            orders(first: 1, query: $q) {
+                edges { node { id name tags displayFulfillmentStatus cancelledAt } }
+            }
         }
     ''', {'q': f'name:{order_name}'})
     edges = data['orders']['edges']
     if not edges:
-        return None, None
+        return None, None, None, None
     node = edges[0]['node']
     current_tag = next((t for t in node['tags'] if t.startswith('dhg-status-')), None)
     current_status = current_tag.replace('dhg-status-', '') if current_tag else None
-    return node['id'], current_status
-
+    return node['id'], current_status, node['displayFulfillmentStatus'], node['cancelledAt']
 
 def apply_completion_tag(order_id, tag):
     shopify_graphql('''
         mutation tagsAdd($id: ID!, $tags: [String!]!) {
-          tagsAdd(id: $id, tags: $tags) {
-            userErrors { field message }
-          }
+            tagsAdd(id: $id, tags: $tags) {
+                userErrors { field message }
+            }
         }
     ''', {'id': order_id, 'tags': [tag]})
-
 
 def remove_status_tag(order_id, tag):
     shopify_graphql('''
         mutation tagsRemove($id: ID!, $tags: [String!]!) {
-          tagsRemove(id: $id, tags: $tags) {
-            userErrors { field message }
-          }
+            tagsRemove(id: $id, tags: $tags) {
+                userErrors { field message }
+            }
         }
     ''', {'id': order_id, 'tags': [tag]})
-
 
 # ── Core logic ───────────────────────────────────────────────────────────────
 
@@ -165,10 +155,8 @@ def get_asmodee_fully_shipped_orders():
     absent from this week's quote, not actually in hand yet)."""
     rows = sheets_get(AGG_SHEET_ID, RECONCILE_RANGE)
     SHIPPED_OK = {'Match', 'More than submitted (likely preorder/backorder)'}
-
     order_skus_ok = {}
     order_skus_total = {}
-
     for row in rows:
         if len(row) < 5:
             continue
@@ -183,9 +171,7 @@ def get_asmodee_fully_shipped_orders():
             order_skus_total[order_name] = order_skus_total.get(order_name, 0) + 1
             if status in SHIPPED_OK:
                 order_skus_ok[order_name] = order_skus_ok.get(order_name, 0) + 1
-
     return {name for name, total in order_skus_total.items() if order_skus_ok.get(name, 0) == total}
-
 
 def mark_stage(supplier, stage):
     """Generic handler for all (supplier, stage) button combinations.
@@ -199,6 +185,12 @@ def mark_stage(supplier, stage):
     An order already at dhg-status-inventory-queued is never downgraded -
     it's already fully ready to pack from bin stock, so completion tags from
     earlier pipeline stages would be a regression, not progress.
+
+    Orders that are already Fulfilled or Cancelled in Shopify are dropped
+    from the Shipment Tracking tab entirely - they're not carried forward,
+    not tagged, and not counted in any result bucket other than
+    'removedFulfilledOrCancelled'. Fulfilled = already shipped, Cancelled =
+    items unavailable - neither belongs in this tab or any downstream report.
     """
     if supplier not in VALID_SUPPLIERS:
         raise ValueError(f'supplier must be one of {sorted(VALID_SUPPLIERS)}')
@@ -220,22 +212,37 @@ def mark_stage(supplier, stage):
     completed_order_names = []
     skipped_order_names = []
     skipped_inventory_queued = []
+    removed_fulfilled_or_cancelled = []
 
     # Pre-fetch current Shopify status for every order on the tracking tab so we
-    # can skip inventory-queued orders BEFORE touching their sheet row at all -
-    # not just before applying the completion tag.
+    # can skip inventory-queued orders, and drop Fulfilled/Cancelled orders,
+    # BEFORE touching their sheet row at all - not just before applying the
+    # completion tag.
     order_names_on_sheet = [row[0] for row in tracking_rows if row]
     current_statuses = {}
+    current_fulfillment = {}
+    current_cancelled = {}
     for name in order_names_on_sheet:
         try:
-            _, status = get_order_id_and_current_status(name)
+            _, status, fulfillment, cancelled_at = get_order_id_and_current_status(name)
             current_statuses[name] = status
+            current_fulfillment[name] = fulfillment
+            current_cancelled[name] = cancelled_at
         except Exception:
             current_statuses[name] = None
+            current_fulfillment[name] = None
+            current_cancelled[name] = None
 
     for row in tracking_rows:
         row = row + [''] * (6 - len(row))  # pad to 6 columns in case sheet has short rows
         order_name = row[0]
+
+        # Drop Fulfilled/Cancelled orders entirely - do not carry them forward,
+        # do not tag them, do not report them as skipped-for-later. They're
+        # done or dead; they don't belong in this tab.
+        if current_fulfillment.get(order_name) == 'FULFILLED' or current_cancelled.get(order_name):
+            removed_fulfilled_or_cancelled.append(order_name)
+            continue
 
         if current_statuses.get(order_name) == 'inventory-queued':
             skipped_inventory_queued.append(order_name)
@@ -257,17 +264,16 @@ def mark_stage(supplier, stage):
 
         stage_so_far.add(supplier)
         row[stage_col] = ', '.join(sorted(stage_so_far))
-
         stage_complete = stage_so_far == needed_set
         if stage_complete:
             row[OVERALL_STATUS_COL] = config['next_overall']
             completed_order_names.append(order_name)
-
         updated_rows.append(row)
 
-    # Write the updated tracking tab back
+    # Write the updated tracking tab back (Fulfilled/Cancelled rows are simply
+    # absent from updated_rows, so this also removes them from the sheet)
+    sheets_clear(AGG_SHEET_ID, TRACKING_RANGE)
     if updated_rows:
-        sheets_clear(AGG_SHEET_ID, TRACKING_RANGE)
         sheets_put(AGG_SHEET_ID, f"'Shipment Tracking'!A2:F{len(updated_rows)+1}", updated_rows)
 
     # Apply the completion tag in Shopify for every order that just finished this stage
@@ -275,11 +281,10 @@ def mark_stage(supplier, stage):
     tag_errors = []
     for order_name in completed_order_names:
         try:
-            order_id, current_status = get_order_id_and_current_status(order_name)
+            order_id, current_status, _, _ = get_order_id_and_current_status(order_name)
             if not order_id:
                 tag_errors.append({'order': order_name, 'error': 'Order not found in Shopify'})
                 continue
-
             tag = config['completion_tag']
             if tag.startswith('dhg-status-') and current_status:
                 remove_status_tag(order_id, f'dhg-status-{current_status}')
@@ -295,8 +300,8 @@ def mark_stage(supplier, stage):
         'tagErrors': tag_errors,
         'skippedNotYetFullyMatched': skipped_order_names,
         'skippedAlreadyInventoryQueued': skipped_inventory_queued,
+        'removedFulfilledOrCancelled': removed_fulfilled_or_cancelled,
     }
-
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
@@ -308,15 +313,12 @@ class handler(BaseHTTPRequestHandler):
             payload = json.loads(body) if body else {}
             supplier = payload.get('supplier')
             stage = payload.get('stage')
-
             try:
                 result = mark_stage(supplier, stage)
             except ValueError as e:
                 self._send_json(400, {'error': str(e)})
                 return
-
             self._send_json(200, result)
-
         except Exception as e:
             import traceback
             self._send_json(500, {'error': str(e), 'trace': traceback.format_exc()})

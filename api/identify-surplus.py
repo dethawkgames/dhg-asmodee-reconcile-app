@@ -3,7 +3,6 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
-
 import jwt
 import urllib.request
 import urllib.parse
@@ -15,7 +14,6 @@ SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP')
 SHOPIFY_CLIENT_ID = os.environ.get('SHOPIFY_CLIENT_ID')
 SHOPIFY_CLIENT_SECRET = os.environ.get('SHOPIFY_CLIENT_SECRET')
 SHOPIFY_API_VERSION = '2025-01'
-
 
 # ── Google Sheets auth + access ──────────────────────────────────────────────
 
@@ -38,7 +36,6 @@ def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
         result = json.loads(resp.read())
     return result['access_token']
 
-
 def sheets_get(spreadsheet_id, range_str):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}'
@@ -46,7 +43,6 @@ def sheets_get(spreadsheet_id, range_str):
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result.get('values', [])
-
 
 def sheets_put(spreadsheet_id, range_str, values):
     token = get_google_token()
@@ -58,14 +54,12 @@ def sheets_put(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
-
 def sheets_clear(spreadsheet_id, range_str):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
     req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
-
 
 def ensure_surplus_tab_exists():
     token = get_google_token()
@@ -83,7 +77,6 @@ def ensure_surplus_tab_exists():
         )
         with urllib.request.urlopen(req) as resp:
             json.loads(resp.read())
-
 
 # ── "Arrived" quantities per SKU, across all three suppliers ────────────────
 
@@ -150,7 +143,6 @@ def get_arrived_quantities():
 
     return arrived
 
-
 # ── "Still needed" quantities: all unfulfilled orders from the last 30 days ─
 
 def get_shopify_token():
@@ -166,7 +158,6 @@ def get_shopify_token():
         result = json.loads(resp.read())
     return result['access_token']
 
-
 def shopify_graphql(query, variables=None):
     token = get_shopify_token()
     body = json.dumps({'query': query, 'variables': variables or {}}).encode()
@@ -181,33 +172,35 @@ def shopify_graphql(query, variables=None):
         raise Exception(f"Shopify GraphQL errors: {result['errors']}")
     return result['data']
 
-
 def get_still_needed_quantities():
-    """Returns {sku: total_quantity_needed} across all unfulfilled orders
-    placed in the last 30 days. (Anything older is the Backorder Weekly
-    Sweep's territory, not this tool's.)"""
+    """Returns {sku: total_quantity_needed} across all unfulfilled,
+    non-cancelled orders placed in the last 30 days. (Anything older is the
+    Backorder Weekly Sweep's territory, not this tool's.)
+
+    Cancelled orders are excluded explicitly: Shopify still reports
+    fulfillment_status:unfulfilled for a cancelled order (nothing was ever
+    fulfilled), so without -status:cancelled here, a cancelled order's items
+    would incorrectly count as still needed and mask real surplus."""
     since = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%d')
     needed = {}
     cursor = None
     has_next = True
-
     while has_next:
         data = shopify_graphql('''
             query getOrders($cursor: String, $q: String!) {
-              orders(first: 50, after: $cursor, query: $q) {
-                pageInfo { hasNextPage endCursor }
-                edges {
-                  node {
-                    name
-                    lineItems(first: 50) {
-                      edges { node { sku quantity } }
+                orders(first: 50, after: $cursor, query: $q) {
+                    pageInfo { hasNextPage endCursor }
+                    edges {
+                        node {
+                            name
+                            lineItems(first: 50) {
+                                edges { node { sku quantity } }
+                            }
+                        }
                     }
-                  }
                 }
-              }
             }
-        ''', {'cursor': cursor, 'q': f'fulfillment_status:unfulfilled created_at:>={since}'})
-
+        ''', {'cursor': cursor, 'q': f'fulfillment_status:unfulfilled -status:cancelled created_at:>={since}'})
         page = data['orders']
         for edge in page['edges']:
             order = edge['node']
@@ -219,9 +212,7 @@ def get_still_needed_quantities():
                 needed[sku] = needed.get(sku, 0) + item['quantity']
         has_next = page['pageInfo']['hasNextPage']
         cursor = page['pageInfo']['endCursor']
-
     return needed
-
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
@@ -236,7 +227,6 @@ class handler(BaseHTTPRequestHandler):
                 surplus = info['quantity'] - needed.get(sku, 0)
                 if surplus > 0:
                     results.append([sku, info['title'], surplus])
-
             results.sort(key=lambda r: r[0])
 
             ensure_surplus_tab_exists()
