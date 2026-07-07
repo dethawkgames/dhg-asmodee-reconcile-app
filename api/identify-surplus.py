@@ -180,7 +180,13 @@ def get_still_needed_quantities():
     Cancelled orders are excluded explicitly: Shopify still reports
     fulfillment_status:unfulfilled for a cancelled order (nothing was ever
     fulfilled), so without -status:cancelled here, a cancelled order's items
-    would incorrectly count as still needed and mask real surplus."""
+    would incorrectly count as still needed and mask real surplus.
+
+    Uses currentQuantity rather than quantity for the same reason: quantity
+    is the original amount ordered and never changes, while currentQuantity
+    reflects what's actually still owed after any refunds/edits. A
+    partially-refunded line item would otherwise count as still needed
+    forever."""
     since = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%d')
     needed = {}
     cursor = None
@@ -194,7 +200,7 @@ def get_still_needed_quantities():
                         node {
                             name
                             lineItems(first: 50) {
-                                edges { node { sku quantity } }
+                                edges { node { sku quantity currentQuantity } }
                             }
                         }
                     }
@@ -209,7 +215,14 @@ def get_still_needed_quantities():
                 sku = (item.get('sku') or '').strip()
                 if not sku:
                     continue
-                needed[sku] = needed.get(sku, 0) + item['quantity']
+                # currentQuantity reflects what's actually still owed after
+                # any refunds/edits - the original quantity field never
+                # changes, so a refunded item would otherwise count as
+                # "still needed" forever and mask real surplus.
+                qty = item.get('currentQuantity')
+                if not qty or qty <= 0:
+                    continue
+                needed[sku] = needed.get(sku, 0) + qty
         has_next = page['pageInfo']['hasNextPage']
         cursor = page['pageInfo']['endCursor']
     return needed
