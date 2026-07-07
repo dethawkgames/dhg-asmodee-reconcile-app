@@ -5,7 +5,6 @@ import base64
 import cgi
 import io
 from http.server import BaseHTTPRequestHandler
-
 import pdfplumber
 import jwt
 import urllib.request
@@ -24,34 +23,27 @@ MSRP_X_MIN = 350
 QTY_X_MIN = 415
 QTY_X_MAX = 435
 
-
 def parse_asmodee_quote(file_bytes):
     line_items = []
     hit_total = False
-
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             if hit_total:
                 break
-
             words = page.extract_words()
             lines = {}
             for w in words:
                 top_key = round(w['top'])
                 lines.setdefault(top_key, []).append(w)
-
             sorted_tops = sorted(lines.keys())
             current_item = None
             header_seen = False
-
             for top in sorted_tops:
                 row_words = sorted(lines[top], key=lambda w: w['x0'])
                 row_text = ' '.join(w['text'] for w in row_words)
-
                 if row_text.strip().startswith('Total $') or row_text.strip().startswith('Total'):
                     hit_total = True
                     break
-
                 if 'Description' in row_text and 'MSRP' in row_text:
                     header_seen = True
                     continue
@@ -59,10 +51,8 @@ def parse_asmodee_quote(file_bytes):
                     continue
                 if row_text.strip() in ('Line', 'Amount', 'Unit', 'Excl.', 'Tax') or row_text.strip().startswith('Line Amount'):
                     continue
-
                 qty_word = next((w for w in row_words if QTY_X_MIN <= w['x0'] <= QTY_X_MAX), None)
                 sku_word = next((w for w in row_words if abs(w['x0'] - SKU_X) < 2), None)
-
                 if qty_word and sku_word:
                     if current_item:
                         line_items.append(current_item)
@@ -88,19 +78,15 @@ def parse_asmodee_quote(file_bytes):
                     fragment = row_words[0]['text']
                     if len(row_words) == 1 and len(fragment) <= 6:
                         current_item['sku'] = current_item['sku'] + fragment
-
             if current_item:
                 line_items.append(current_item)
-
     return [item for item in line_items if not item.get('is_fee')]
-
 
 # ── Google Sheets auth + access ──────────────────────────────────────────────
 
 def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
     sa_email = os.environ['GOOGLE_SA_EMAIL']
     sa_key = os.environ['GOOGLE_SA_PRIVATE_KEY'].replace('\\n', '\n')
-
     now = int(time.time())
     payload = {
         'iss': sa_email,
@@ -110,17 +96,14 @@ def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
         'iat': now,
     }
     assertion = jwt.encode(payload, sa_key, algorithm='RS256')
-
     data = urllib.parse.urlencode({
         'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         'assertion': assertion,
     }).encode()
-
     req = urllib.request.Request('https://oauth2.googleapis.com/token', data=data, method='POST')
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result['access_token']
-
 
 def sheets_get(spreadsheet_id, range_str):
     token = get_google_token()
@@ -129,7 +112,6 @@ def sheets_get(spreadsheet_id, range_str):
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result.get('values', [])
-
 
 def sheets_put(spreadsheet_id, range_str, values):
     token = get_google_token()
@@ -142,14 +124,12 @@ def sheets_put(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
-
 def sheets_clear(spreadsheet_id, range_str):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
     req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
-
 
 def ensure_reconcile_tab_exists():
     token = get_google_token()
@@ -158,7 +138,6 @@ def ensure_reconcile_tab_exists():
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     titles = [s['properties']['title'] for s in result['sheets']]
-
     if RECONCILE_TAB not in titles:
         body = json.dumps({
             'requests': [{'addSheet': {'properties': {'title': RECONCILE_TAB}}}]
@@ -170,7 +149,6 @@ def ensure_reconcile_tab_exists():
         )
         with urllib.request.urlopen(req) as resp:
             json.loads(resp.read())
-
 
 # ── Comparison logic ─────────────────────────────────────────────────────────
 
@@ -197,7 +175,6 @@ def run_comparison(submitted_rows, quote_items):
 
     results = []
     all_skus = set(submitted.keys()) | set(quoted.keys())
-
     for sku in sorted(all_skus):
         sub = submitted.get(sku)
         quo = quoted.get(sku)
@@ -235,19 +212,17 @@ def run_comparison(submitted_rows, quote_items):
 
     return results
 
-
 # An item "counts as shipped" for an order if its status is Match or the
 # preorder/backorder overage case - both mean the customer's ordered quantity
 # is genuinely covered. Anything else means that SKU has not actually arrived.
 SHIPPED_OK_STATUSES = {'Match', 'More than submitted (likely preorder/backorder)'}
-
 
 def compute_fully_shipped_orders(comparison_results):
     """Given reconciliation results (each row's last column is Order Names),
     returns the set of order names where EVERY Asmodee SKU belonging to that
     order has a status in SHIPPED_OK_STATUSES. An order with even one SKU
     that's missing/short/unexpected is excluded - it's not fully shipped yet."""
-    order_skus_ok = {}   # order_name -> count of SKUs that are OK
+    order_skus_ok = {}     # order_name -> count of SKUs that are OK
     order_skus_total = {}  # order_name -> total SKUs seen for that order
 
     for row in comparison_results:
@@ -269,6 +244,36 @@ def compute_fully_shipped_orders(comparison_results):
             fully_shipped.add(order_name)
     return fully_shipped
 
+# ── Merge logic ──────────────────────────────────────────────────────────────
+# Multiple invoices can be in flight at once when shipments run late enough to
+# overlap with the next week's order (e.g. last week's shipment arriving after
+# this week's order was already placed and possibly already reconciled). A
+# blind clear-and-replace on every upload would silently destroy whichever
+# batch's results aren't part of THIS invoice - discarding real, still-needed
+# reconciliation data for orders that haven't been marked Shipped yet.
+#
+# Instead: read whatever's currently in the tab, update/insert only the SKUs
+# touched by this invoice, and leave every other SKU's existing row exactly
+# as it was. Nothing gets dropped just because it wasn't on this particular
+# invoice.
+
+def load_existing_reconciliation():
+    rows = sheets_get(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F1000")
+    existing = {}
+    for row in rows:
+        if not row or not row[0]:
+            continue
+        sku = row[0].strip()
+        padded = row + [''] * (6 - len(row))
+        existing[sku] = padded[:6]
+    return existing
+
+def merge_results(existing, new_results):
+    merged = dict(existing)  # start from what's already there
+    for row in new_results:
+        sku = row[0]
+        merged[sku] = row  # this invoice's data for this SKU wins
+    return [merged[sku] for sku in sorted(merged.keys())]
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
@@ -295,26 +300,29 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             file_bytes = fs['file'].file.read()
-
             quote_items = parse_asmodee_quote(file_bytes)
-            submitted_rows = sheets_get(AGG_SHEET_ID, ASMODEE_ORDER_RANGE)
-            results = run_comparison(submitted_rows, quote_items)
 
-            # Write to Latest Reconciliation tab
+            submitted_rows = sheets_get(AGG_SHEET_ID, ASMODEE_ORDER_RANGE)
+            new_results = run_comparison(submitted_rows, quote_items)
+
             ensure_reconcile_tab_exists()
+            existing = load_existing_reconciliation()
+            merged_results = merge_results(existing, new_results)
+
             header = [['Shopify SKU', 'Title', 'Submitted Qty', 'Quoted Qty', 'Status', 'Order Names']]
             sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1000")
             sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1", header)
-            if results:
-                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F{len(results)+1}", results)
+            if merged_results:
+                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F{len(merged_results)+1}", merged_results)
 
             self._send_json(200, {
                 'success': True,
                 'itemsInQuote': len(quote_items),
                 'itemsSubmitted': len(submitted_rows),
-                'results': results,
+                'newOrUpdatedThisUpload': len(new_results),
+                'totalAfterMerge': len(merged_results),
+                'results': new_results,
             })
-
         except Exception as e:
             import traceback
             self._send_json(500, {'error': str(e), 'trace': traceback.format_exc()})

@@ -4,7 +4,6 @@ import time
 import cgi
 import io
 from http.server import BaseHTTPRequestHandler
-
 import openpyxl
 import jwt
 import urllib.request
@@ -20,7 +19,6 @@ RECONCILE_TAB = 'Latest UD Reconciliation'
 NON_PRODUCT_ITEM_NOS = {'41040'}  # SHIPPING & HANDLING
 NON_PRODUCT_DESCRIPTIONS = {'2% cash discount reversal'}
 
-
 # ── Invoice parsing (xlsx) ───────────────────────────────────────────────────
 
 def parse_ud_invoice(file_bytes):
@@ -29,7 +27,6 @@ def parse_ud_invoice(file_bytes):
     line (shipping/handling and discount-reversal lines excluded)."""
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.worksheets[0]
-
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return []
@@ -67,6 +64,7 @@ def parse_ud_invoice(file_bytes):
             continue
         if product.strip().lower() in NON_PRODUCT_DESCRIPTIONS:
             continue
+
         try:
             qty = int(qty_raw)
         except (TypeError, ValueError):
@@ -78,9 +76,7 @@ def parse_ud_invoice(file_bytes):
             'description': product,
             'quantity': qty,
         })
-
     return items
-
 
 def aggregate_invoice_items(all_items):
     """Combines line items across multiple invoices (e.g. primary + secondary
@@ -100,13 +96,11 @@ def aggregate_invoice_items(all_items):
         combined[key]['quantity'] += item['quantity']
     return combined
 
-
 # ── Google Sheets auth + access ──────────────────────────────────────────────
 
 def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
     sa_email = os.environ['GOOGLE_SA_EMAIL']
     sa_key = os.environ['GOOGLE_SA_PRIVATE_KEY'].replace('\\n', '\n')
-
     now = int(time.time())
     payload = {
         'iss': sa_email,
@@ -116,17 +110,14 @@ def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
         'iat': now,
     }
     assertion = jwt.encode(payload, sa_key, algorithm='RS256')
-
     data = urllib.parse.urlencode({
         'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         'assertion': assertion,
     }).encode()
-
     req = urllib.request.Request('https://oauth2.googleapis.com/token', data=data, method='POST')
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result['access_token']
-
 
 def sheets_get(spreadsheet_id, range_str):
     token = get_google_token()
@@ -135,7 +126,6 @@ def sheets_get(spreadsheet_id, range_str):
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     return result.get('values', [])
-
 
 def sheets_put(spreadsheet_id, range_str, values):
     token = get_google_token()
@@ -148,14 +138,12 @@ def sheets_put(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
-
 def sheets_clear(spreadsheet_id, range_str):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
     req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
-
 
 def ensure_reconcile_tab_exists():
     token = get_google_token()
@@ -164,7 +152,6 @@ def ensure_reconcile_tab_exists():
     with urllib.request.urlopen(req) as resp:
         result = json.loads(resp.read())
     titles = [s['properties']['title'] for s in result['sheets']]
-
     if RECONCILE_TAB not in titles:
         body = json.dumps({
             'requests': [{'addSheet': {'properties': {'title': RECONCILE_TAB}}}]
@@ -176,7 +163,6 @@ def ensure_reconcile_tab_exists():
         )
         with urllib.request.urlopen(req) as resp:
             json.loads(resp.read())
-
 
 # ── Comparison logic ─────────────────────────────────────────────────────────
 # Mirrors the Asmodee reconciliation logic exactly, but keyed by Barcode
@@ -214,6 +200,7 @@ def run_comparison(submitted_rows, invoice_items_by_key):
     for i, s in enumerate(submitted):
         if s['barcode']:
             sub_by_barcode.setdefault(s['barcode'], i)
+
     for j, inv in enumerate(invoice_items):
         if inv['barcode'] and inv['barcode'] in sub_by_barcode:
             i = sub_by_barcode[inv['barcode']]
@@ -226,6 +213,7 @@ def run_comparison(submitted_rows, invoice_items_by_key):
     for i, s in enumerate(submitted):
         if not sub_matched[i] and s['sku']:
             sub_by_sku.setdefault(s['sku'], i)
+
     for j, inv in enumerate(invoice_items):
         if inv_matched[j] or not inv['sku']:
             continue
@@ -236,7 +224,6 @@ def run_comparison(submitted_rows, invoice_items_by_key):
             inv_matched[j] = True
 
     results = []
-
     for i, j in pairs:
         sub, inv = submitted[i], invoice_items[j]
         if sub['quantity'] == inv['quantity']:
@@ -276,6 +263,41 @@ def run_comparison(submitted_rows, invoice_items_by_key):
     results.sort(key=lambda r: (r[0] or '', r[1] or ''))
     return results
 
+# ── Merge logic ──────────────────────────────────────────────────────────────
+# Same rationale as reconcile.py: overlapping order cycles (e.g. a delayed
+# shipment's invoice arriving after the next week's order was already placed
+# and reconciled) means a blind clear-and-replace on every upload would
+# silently destroy whichever batch's results aren't part of THIS invoice.
+# Instead: read what's already there, update/insert only the rows touched by
+# this invoice (keyed by barcode, falling back to SKU - matching the same
+# identifier priority used everywhere else in this file), and leave every
+# other row exactly as it was.
+
+def reconciliation_key(row):
+    # row: [SKU, Barcode, Title, Submitted Qty, Invoice Qty, Status, Order Names]
+    barcode = row[1] if len(row) > 1 else ''
+    sku = row[0] if len(row) > 0 else ''
+    return barcode or sku
+
+def load_existing_reconciliation():
+    rows = sheets_get(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:G1000")
+    existing = {}
+    for row in rows:
+        if not row or (not row[0] and (len(row) < 2 or not row[1])):
+            continue
+        padded = row + [''] * (7 - len(row))
+        key = reconciliation_key(padded)
+        if key:
+            existing[key] = padded[:7]
+    return existing
+
+def merge_results(existing, new_results):
+    merged = dict(existing)
+    for row in new_results:
+        key = reconciliation_key(row)
+        if key:
+            merged[key] = row
+    return [merged[k] for k in sorted(merged.keys())]
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
@@ -312,25 +334,28 @@ class handler(BaseHTTPRequestHandler):
                 invoices_parsed.append({'filename': f.filename, 'lineItems': len(items)})
 
             invoice_items_by_key = aggregate_invoice_items(all_items)
-
             submitted_rows = sheets_get(AGG_SHEET_ID, UD_ORDER_RANGE)
-            results = run_comparison(submitted_rows, invoice_items_by_key)
+            new_results = run_comparison(submitted_rows, invoice_items_by_key)
 
             ensure_reconcile_tab_exists()
+            existing = load_existing_reconciliation()
+            merged_results = merge_results(existing, new_results)
+
             header = [['SKU', 'Barcode', 'Title', 'Submitted Qty', 'Invoice Qty', 'Status', 'Order Names']]
             sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:G1000")
             sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:G1", header)
-            if results:
-                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:G{len(results)+1}", results)
+            if merged_results:
+                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:G{len(merged_results)+1}", merged_results)
 
             self._send_json(200, {
                 'success': True,
                 'invoicesParsed': invoices_parsed,
                 'itemsInInvoices': len(invoice_items_by_key),
                 'itemsSubmitted': len(submitted_rows),
-                'results': results,
+                'newOrUpdatedThisUpload': len(new_results),
+                'totalAfterMerge': len(merged_results),
+                'results': new_results,
             })
-
         except Exception as e:
             import traceback
             self._send_json(500, {'error': str(e), 'trace': traceback.format_exc()})
