@@ -275,9 +275,15 @@ def run_comparison(submitted_rows, invoice_items_by_key):
 
 def reconciliation_key(row):
     # row: [SKU, Barcode, Title, Submitted Qty, Invoice Qty, Status, Order Names]
+    # SKU (our own Vendor Item No.) is the stable identifier: the submitted
+    # side always has one, but frequently has no Barcode filled in. Keying by
+    # barcode-when-present meant the same item could land under a different
+    # key depending on whether that particular comparison happened to match
+    # it by barcode or by SKU fallback - producing duplicate rows for one
+    # item instead of updating a single row. SKU first avoids that.
     barcode = row[1] if len(row) > 1 else ''
     sku = row[0] if len(row) > 0 else ''
-    return barcode or sku
+    return sku or barcode
 
 def load_existing_reconciliation():
     rows = sheets_get(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:G1000")
@@ -292,11 +298,29 @@ def load_existing_reconciliation():
     return existing
 
 def merge_results(existing, new_results):
+    # A "Missing from invoice entirely" verdict only means "not in *this*
+    # invoice" - it says nothing about invoices already reconciled earlier.
+    # Invoices don't necessarily arrive in date order (a slow supplier's
+    # backlog can surface after a newer week's invoice already matched
+    # things), so a new run must never let "missing" downgrade a SKU that a
+    # prior run already confirmed as shipped. Once matched, stays matched;
+    # only a genuinely conflicting new result (a real quantity change on that
+    # same key) is allowed to overwrite it.
+    CONFIRMED = {'Match', 'More than submitted (likely preorder/backorder)'}
     merged = dict(existing)
     for row in new_results:
         key = reconciliation_key(row)
-        if key:
-            merged[key] = row
+        if not key:
+            continue
+        prior = merged.get(key)
+        if (
+            row[5] == 'Missing from invoice entirely - needs review'
+            and prior is not None
+            and len(prior) > 5
+            and prior[5] in CONFIRMED
+        ):
+            continue  # keep the earlier confirmed result; don't downgrade it
+        merged[key] = row
     return [merged[k] for k in sorted(merged.keys())]
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────

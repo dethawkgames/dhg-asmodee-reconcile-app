@@ -269,9 +269,23 @@ def load_existing_reconciliation():
     return existing
 
 def merge_results(existing, new_results):
+    # See the matching note in reconcile-ud.py: a "Missing from invoice
+    # entirely" result only describes *this* invoice, not the reconciliation
+    # history. Invoices don't always arrive in date order, so a later run
+    # must never let "missing" downgrade a SKU a prior run already confirmed
+    # as shipped.
+    CONFIRMED = {'Match', 'More than submitted (likely preorder/backorder)'}
     merged = dict(existing)  # start from what's already there
     for row in new_results:
         sku = row[0]
+        prior = merged.get(sku)
+        if (
+            row[4] == 'Missing from invoice entirely - needs review'
+            and prior is not None
+            and len(prior) > 4
+            and prior[4] in CONFIRMED
+        ):
+            continue  # keep the earlier confirmed result; don't downgrade it
         merged[sku] = row  # this invoice's data for this SKU wins
     return [merged[sku] for sku in sorted(merged.keys())]
 
