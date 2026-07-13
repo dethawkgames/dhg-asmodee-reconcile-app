@@ -148,20 +148,46 @@ def remove_status_tag(order_id, tag):
 
 # ── Core logic ───────────────────────────────────────────────────────────────
 
-def get_asmodee_fully_shipped_orders():
-    """Reads the Latest Reconciliation tab and returns the set of order names
-    where every Asmodee SKU for that order is Match or More-than-submitted
-    (the Pre-Order status also doesn't count as shipped - it's expected to be
-    absent from this week's quote, not actually in hand yet)."""
-    rows = sheets_get(AGG_SHEET_ID, RECONCILE_RANGE)
+
+# Per-supplier reconciliation source. Column indices are 0-based positions
+# within each row of the tab's own range. Both tabs share the same tail
+# layout (..., Status, Order Names) - Asmodee's just doesn't have a Barcode
+# column, so its indices sit one earlier than UD's.
+RECONCILE_SOURCES = {
+    'Asmodee': {
+        'range': RECONCILE_RANGE,
+        'status_col': 4,
+        'order_names_col': 5,
+    },
+    'Universal Dist': {
+        'range': "'Latest UD Reconciliation'!A2:G1000",
+        'status_col': 5,
+        'order_names_col': 6,
+    },
+}
+
+def get_fully_shipped_orders(supplier):
+    """Reads that supplier's reconciliation tab and returns the set of order
+    names where every one of that supplier's SKUs for the order is Match or
+    More-than-submitted (Pre-Order also doesn't count as shipped - it's
+    expected to be absent from this week's quote, not actually in hand yet).
+
+    Only suppliers with a reconciliation tab (currently Asmodee and
+    Universal Dist) can be checked this way - a supplier missing from
+    RECONCILE_SOURCES falls back to the unconditional behavior, since there's
+    no itemized source of truth to check against."""
+    config = RECONCILE_SOURCES[supplier]
+    rows = sheets_get(AGG_SHEET_ID, config['range'])
+    status_col = config['status_col']
+    order_names_col = config['order_names_col']
     SHIPPED_OK = {'Match', 'More than submitted (likely preorder/backorder)'}
     order_skus_ok = {}
     order_skus_total = {}
     for row in rows:
-        if len(row) < 5:
+        if len(row) <= order_names_col:
             continue
-        status = row[4]
-        order_names_str = row[5] if len(row) > 5 else ''
+        status = row[status_col]
+        order_names_str = row[order_names_col]
         if not order_names_str:
             continue
         for order_name in order_names_str.split(', '):
@@ -176,11 +202,17 @@ def get_asmodee_fully_shipped_orders():
 def mark_stage(supplier, stage):
     """Generic handler for all (supplier, stage) button combinations.
 
-    For stage='shipped' and supplier='Asmodee', the itemized reconciliation
-    check still applies - only orders whose Asmodee SKUs fully matched are
-    eligible. Every other (supplier, stage) combination is unconditional:
-    clicking the button marks every order in the tracking tab that currently
-    needs this supplier at this stage.
+    For stage='shipped' and a supplier with a reconciliation tab (currently
+    Asmodee and Universal Dist), the itemized reconciliation check applies -
+    only orders whose SKUs for that supplier fully matched this week's
+    invoice(s) are eligible. This matters because a slow-shipping supplier
+    (Universal Dist especially) routinely ships a prior week's order behind
+    a newer one; without this check, clicking "shipped" would incorrectly
+    close out every order still waiting on that supplier, not just the ones
+    that actually arrived. Every other (supplier, stage) combination -
+    including suppliers without a reconciliation tab, like ACDD - is
+    unconditional: clicking the button marks every order in the tracking tab
+    that currently needs this supplier at this stage.
 
     An order already at dhg-status-inventory-queued is never downgraded -
     it's already fully ready to pack from bin stock, so completion tags from
@@ -205,8 +237,8 @@ def mark_stage(supplier, stage):
         return {'updated': [], 'completed': [], 'skipped': [], 'message': 'No rows in Shipment Tracking tab.'}
 
     eligible_orders = None
-    if supplier == 'Asmodee' and stage == 'shipped':
-        eligible_orders = get_asmodee_fully_shipped_orders()
+    if stage == 'shipped' and supplier in RECONCILE_SOURCES:
+        eligible_orders = get_fully_shipped_orders(supplier)
 
     updated_rows = []
     completed_order_names = []
