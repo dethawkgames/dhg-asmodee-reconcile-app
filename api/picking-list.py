@@ -55,9 +55,8 @@ def shopify_graphql(query, variables=None):
 # ── Order list (unfulfilled/partial, excluding cancelled) ──────────────────
 
 ORDER_LIST_QUERY = '''
-query PickableOrders($cursor: String) {
-  orders(first: 50, after: $cursor, query: "fulfillment_status:unfulfilled OR fulfillment_status:partial", sortKey: CREATED_AT) {
-    pageInfo { hasNextPage endCursor }
+query PickableOrders($first: Int!, $searchQuery: String!) {
+  orders(first: $first, query: $searchQuery, sortKey: CREATED_AT, reverse: true) {
     edges {
       node {
         id
@@ -74,33 +73,44 @@ query PickableOrders($cursor: String) {
 }
 '''
 
-def list_pickable_orders():
+DEFAULT_ORDER_LIMIT = 25
+MAX_ORDER_LIMIT = 100
+
+def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None):
+    """Most-recent-first, capped at `limit` (default/most-recent 25 - same
+    behavior as iPacky's picking list). `since`/`until` are 'YYYY-MM-DD'
+    strings and, when given, narrow to orders created in that range instead
+    of pulling from the full order history."""
+    limit = max(1, min(int(limit), MAX_ORDER_LIMIT))
+
+    query_parts = ['(fulfillment_status:unfulfilled OR fulfillment_status:partial)']
+    if since:
+        query_parts.append(f'created_at:>={since}')
+    if until:
+        query_parts.append(f'created_at:<={until}')
+    search_query = ' AND '.join(query_parts)
+
+    data = shopify_graphql(ORDER_LIST_QUERY, {'first': limit, 'searchQuery': search_query})
+
     results = []
-    cursor = None
-    has_next = True
-    while has_next:
-        data = shopify_graphql(ORDER_LIST_QUERY, {'cursor': cursor})
-        for edge in data['orders']['edges']:
-            node = edge['node']
-            if node.get('cancelledAt'):
-                continue
-            tags = [t.lower() for t in (node.get('tags') or [])]
-            ship = node.get('shippingAddress') or {}
-            customer = node.get('customer') or {}
-            name = ship.get('name') or ' '.join(filter(None, [customer.get('firstName'), customer.get('lastName')])) or 'No name on file'
-            results.append({
-                'id': node['id'],
-                'orderNumber': node['name'],
-                'createdAt': node['createdAt'],
-                'fulfillmentStatus': node['displayFulfillmentStatus'],
-                'customerName': name,
-                'city': ship.get('city') or '',
-                'provinceCode': ship.get('provinceCode') or '',
-                'isLocalDelivery': LOCAL_DELIVERY_TAG in tags,
-            })
-        page_info = data['orders']['pageInfo']
-        has_next = page_info['hasNextPage']
-        cursor = page_info['endCursor']
+    for edge in data['orders']['edges']:
+        node = edge['node']
+        if node.get('cancelledAt'):
+            continue
+        tags = [t.lower() for t in (node.get('tags') or [])]
+        ship = node.get('shippingAddress') or {}
+        customer = node.get('customer') or {}
+        name = ship.get('name') or ' '.join(filter(None, [customer.get('firstName'), customer.get('lastName')])) or 'No name on file'
+        results.append({
+            'id': node['id'],
+            'orderNumber': node['name'],
+            'createdAt': node['createdAt'],
+            'fulfillmentStatus': node['displayFulfillmentStatus'],
+            'customerName': name,
+            'city': ship.get('city') or '',
+            'provinceCode': ship.get('provinceCode') or '',
+            'isLocalDelivery': LOCAL_DELIVERY_TAG in tags,
+        })
     return results
 
 
@@ -311,8 +321,12 @@ def generate_pdf(orders):
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            orders = list_pickable_orders()
-            self._send_json(200, {'success': True, 'orders': orders})
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            limit = query.get('limit', [DEFAULT_ORDER_LIMIT])[0]
+            since = query.get('since', [None])[0] or None
+            until = query.get('until', [None])[0] or None
+            orders = list_pickable_orders(limit=limit, since=since, until=until)
+            self._send_json(200, {'success': True, 'orders': orders, 'limit': int(limit)})
         except Exception as e:
             import traceback
             self._send_json(500, {'error': str(e), 'trace': traceback.format_exc()})
