@@ -1,7 +1,6 @@
 import json
 import os
 import time
-import base64
 import cgi
 import io
 from http.server import BaseHTTPRequestHandler
@@ -12,10 +11,20 @@ import urllib.parse
 import urllib.error
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
-ASMODEE_ORDER_RANGE = "'Asmodee Order'!A2:H1000"
+ORDER_NEEDS_TAB = 'Order Needs'
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
 RECONCILE_TAB = 'Latest Reconciliation'
+SUPPLIER = 'Asmodee'
 
-# ── PDF parsing (same logic validated earlier) ──────────────────────────────
+SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
+SHOPIFY_API_VERSION = '2025-01'
+
+EMAIL_LIFECYCLE_TAGS = {
+    'dhg-status-store-first-order', 'dhg-status-shop-first-order',
+    'dhg-status-order-placed', 'dhg-status-preorder',
+}
+
+# ── PDF parsing (unchanged from v1 - already validated) ──────────────────────
 
 SKU_X = 43.2
 DESC_X = 101.6
@@ -69,10 +78,8 @@ def parse_asmodee_quote(file_bytes):
                         line_items.append(current_item)
                         qty_val = qty_word['text']
                         current_item = {
-                            'sku': None,
-                            'description': ' '.join(desc_words),
-                            'quantity': int(qty_val) if qty_val.isdigit() else qty_val,
-                            'is_fee': True,
+                            'sku': None, 'description': ' '.join(desc_words),
+                            'quantity': int(qty_val) if qty_val.isdigit() else qty_val, 'is_fee': True,
                         }
                 elif sku_word and not qty_word and current_item is not None:
                     fragment = row_words[0]['text']
@@ -88,39 +95,25 @@ def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
     sa_email = os.environ['GOOGLE_SA_EMAIL']
     sa_key = os.environ['GOOGLE_SA_PRIVATE_KEY'].replace('\\n', '\n')
     now = int(time.time())
-    payload = {
-        'iss': sa_email,
-        'scope': scope,
-        'aud': 'https://oauth2.googleapis.com/token',
-        'exp': now + 3600,
-        'iat': now,
-    }
+    payload = {'iss': sa_email, 'scope': scope, 'aud': 'https://oauth2.googleapis.com/token', 'exp': now + 3600, 'iat': now}
     assertion = jwt.encode(payload, sa_key, algorithm='RS256')
-    data = urllib.parse.urlencode({
-        'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        'assertion': assertion,
-    }).encode()
+    data = urllib.parse.urlencode({'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion': assertion}).encode()
     req = urllib.request.Request('https://oauth2.googleapis.com/token', data=data, method='POST')
     with urllib.request.urlopen(req) as resp:
-        result = json.loads(resp.read())
-    return result['access_token']
+        return json.loads(resp.read())['access_token']
 
 def sheets_get(spreadsheet_id, range_str):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}'
     req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
     with urllib.request.urlopen(req) as resp:
-        result = json.loads(resp.read())
-    return result.get('values', [])
+        return json.loads(resp.read()).get('values', [])
 
 def sheets_put(spreadsheet_id, range_str, values):
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}?valueInputOption=RAW'
     body = json.dumps({'values': values}).encode()
-    req = urllib.request.Request(url, data=body, method='PUT', headers={
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json',
-    })
+    req = urllib.request.Request(url, data=body, method='PUT', headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
@@ -139,32 +132,78 @@ def ensure_reconcile_tab_exists():
         result = json.loads(resp.read())
     titles = [s['properties']['title'] for s in result['sheets']]
     if RECONCILE_TAB not in titles:
-        body = json.dumps({
-            'requests': [{'addSheet': {'properties': {'title': RECONCILE_TAB}}}]
-        }).encode()
-        req = urllib.request.Request(
-            f'https://sheets.googleapis.com/v4/spreadsheets/{AGG_SHEET_ID}:batchUpdate',
-            data=body, method='POST',
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        )
+        body = json.dumps({'requests': [{'addSheet': {'properties': {'title': RECONCILE_TAB}}}]}).encode()
+        req = urllib.request.Request(f'https://sheets.googleapis.com/v4/spreadsheets/{AGG_SHEET_ID}:batchUpdate',
+            data=body, method='POST', headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
         with urllib.request.urlopen(req) as resp:
             json.loads(resp.read())
 
-# ── Comparison logic ─────────────────────────────────────────────────────────
+# ── Shopify auth + tagging ───────────────────────────────────────────────────
 
-def run_comparison(submitted_rows, quote_items):
-    # submitted_rows columns: ProductId, Quantity, UnitOfMeasureId, VariantId, Title, Stock Status, Order Names, Notes
-    submitted = {}
-    for row in submitted_rows:
+def get_shopify_token():
+    data = urllib.parse.urlencode({
+        'grant_type': 'client_credentials',
+        'client_id': os.environ['SHOPIFY_CLIENT_ID'],
+        'client_secret': os.environ['SHOPIFY_CLIENT_SECRET'],
+    }).encode()
+    req = urllib.request.Request(f'https://{SHOPIFY_SHOP}/admin/oauth/access_token', data=data, method='POST')
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())['access_token']
+
+def shopify_graphql(query, variables=None):
+    token = get_shopify_token()
+    body = json.dumps({'query': query, 'variables': variables or {}}).encode()
+    req = urllib.request.Request(f'https://{SHOPIFY_SHOP}/admin/api/{SHOPIFY_API_VERSION}/graphql.json',
+        data=body, method='POST', headers={'Content-Type': 'application/json', 'X-Shopify-Access-Token': token})
+    with urllib.request.urlopen(req) as resp:
+        result = json.loads(resp.read())
+    if result.get('errors'):
+        raise Exception(f"Shopify GraphQL errors: {result['errors']}")
+    return result['data']
+
+def get_order_id_and_current_status(order_name):
+    data = shopify_graphql('''
+        query getOrder($q: String!) { orders(first: 1, query: $q) { edges { node { id name tags } } } }
+    ''', {'q': f'name:{order_name}'})
+    edges = data['orders']['edges']
+    if not edges:
+        return None, None
+    node = edges[0]['node']
+    current_tag = next((t for t in node['tags'] if t.startswith('dhg-status-') and t not in EMAIL_LIFECYCLE_TAGS), None)
+    return node['id'], (current_tag.replace('dhg-status-', '') if current_tag else None)
+
+def apply_completion_tag(order_id, tag):
+    shopify_graphql('''
+        mutation tagsAdd($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }
+    ''', {'id': order_id, 'tags': [tag]})
+
+def remove_status_tag(order_id, tag):
+    shopify_graphql('''
+        mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }
+    ''', {'id': order_id, 'tags': [tag]})
+
+# ── Comparison logic ─────────────────────────────────────────────────────────
+# "Submitted" now means: currently-Ordered (locked, not yet shipped) Order
+# Needs rows for this supplier, aggregated by SKU - regardless of which
+# Supplier Order ID they belong to. This replaces reading the old Asmodee
+# Order tab, which mixed in demand that hadn't even been submitted yet.
+
+def load_submitted_from_order_needs(order_needs_rows):
+    submitted = {}  # sku -> {quantity, title, order_names(set)}
+    for row in order_needs_rows:
         if not row or not row[0]:
             continue
-        sku = row[0].strip()
-        qty = int(row[1]) if len(row) > 1 and str(row[1]).isdigit() else 0
-        title = row[4] if len(row) > 4 else ''
-        stock_status = row[5] if len(row) > 5 else ''
-        order_names = row[6] if len(row) > 6 else ''
-        submitted[sku] = {'quantity': qty, 'title': title, 'stock_status': stock_status, 'order_names': order_names}
+        row = row + [''] * (8 - len(row))
+        order_name, sku, title, supplier, unit, sup_id, stage, updated = row
+        if supplier != SUPPLIER or stage != 'Ordered':
+            continue
+        if sku not in submitted:
+            submitted[sku] = {'quantity': 0, 'title': title, 'order_names': set()}
+        submitted[sku]['quantity'] += 1
+        submitted[sku]['order_names'].add(order_name)
+    return submitted
 
+def run_comparison(submitted, quote_items):
     quoted = {}
     for item in quote_items:
         sku = (item.get('sku') or '').strip()
@@ -178,7 +217,7 @@ def run_comparison(submitted_rows, quote_items):
     for sku in sorted(all_skus):
         sub = submitted.get(sku)
         quo = quoted.get(sku)
-        order_names = sub['order_names'] if sub else ''
+        order_names = ', '.join(sorted(sub['order_names'])) if sub else ''
 
         if sub and quo:
             if sub['quantity'] == quo['quantity']:
@@ -187,75 +226,66 @@ def run_comparison(submitted_rows, quote_items):
                 status = 'More than submitted (likely preorder/backorder)'
             else:
                 status = 'Less than submitted (partial shipment?)'
-            results.append([
-                sku, sub['title'] or quo['description'],
-                sub['quantity'], quo['quantity'], status, order_names
-            ])
+            results.append([sku, sub['title'] or quo['description'], sub['quantity'], quo['quantity'], status, order_names])
         elif sub and not quo:
-            # Genuine preorders ship later than the rest of an Asmodee order (within
-            # 10 days of release), so a preorder SKU legitimately won't be on this
-            # quote yet even though it was submitted. That's expected, not a problem -
-            # only flag it for review if Stock Status says something other than Pre-Order.
-            if sub['stock_status'].strip() == 'Pre-Order':
-                status = 'Pre-Order - not expected on this shipment yet'
-            else:
-                status = 'Missing from quote entirely - needs review'
-            results.append([
-                sku, sub['title'], sub['quantity'], 0,
-                status, order_names
-            ])
+            results.append([sku, sub['title'], sub['quantity'], 0, 'Missing from quote entirely - needs review', order_names])
         elif quo and not sub:
-            results.append([
-                sku, quo['description'], 0, quo['quantity'],
-                'In quote but not submitted - needs review', ''
-            ])
+            results.append([sku, quo['description'], 0, quo['quantity'], 'In quote but not submitted - needs review', ''])
 
     return results
 
-# An item "counts as shipped" for an order if its status is Match or the
-# preorder/backorder overage case - both mean the customer's ordered quantity
-# is genuinely covered. Anything else means that SKU has not actually arrived.
-SHIPPED_OK_STATUSES = {'Match', 'More than submitted (likely preorder/backorder)'}
+# A SKU whose invoice quantity is >= what's currently Ordered counts as fully
+# shipped for advancement purposes; "Less than submitted" only advances the
+# invoiced quantity, leaving the remainder at Ordered (a genuine short-ship).
+def shipped_qty_for_sku(row):
+    sku, title, sub_qty, quo_qty, status, order_names = row
+    if status in ('Match', 'More than submitted (likely preorder/backorder)'):
+        return sub_qty
+    if status == 'Less than submitted (partial shipment?)':
+        return quo_qty
+    return 0
 
-def compute_fully_shipped_orders(comparison_results):
-    """Given reconciliation results (each row's last column is Order Names),
-    returns the set of order names where EVERY Asmodee SKU belonging to that
-    order has a status in SHIPPED_OK_STATUSES. An order with even one SKU
-    that's missing/short/unexpected is excluded - it's not fully shipped yet."""
-    order_skus_ok = {}     # order_name -> count of SKUs that are OK
-    order_skus_total = {}  # order_name -> total SKUs seen for that order
+# ── Advance Order Needs rows to 'Shipped' ────────────────────────────────────
+# Oldest Supplier Order ID first (PREEXISTING backlog counts as oldest), so a
+# short-ship correctly drains the longest-outstanding commitment first.
 
-    for row in comparison_results:
-        sku, title, sub_qty, quo_qty, status = row[0], row[1], row[2], row[3], row[4]
-        order_names_str = row[5] if len(row) > 5 else ''
-        if not order_names_str:
+def sort_key(supplier_order_id):
+    if supplier_order_id.endswith('-PREEXISTING'):
+        return (0, supplier_order_id)
+    return (1, supplier_order_id)
+
+def advance_shipped_stage(order_needs_rows, comparison_results):
+    to_advance = {row[0]: shipped_qty_for_sku(row) for row in comparison_results if shipped_qty_for_sku(row) > 0}
+    if not to_advance:
+        return order_needs_rows, set(), 0
+
+    # Index Ordered rows for this supplier by SKU, sorted oldest-ID-first
+    by_sku = {}
+    for idx, row in enumerate(order_needs_rows):
+        if not row or not row[0]:
             continue
-        for order_name in order_names_str.split(', '):
-            order_name = order_name.strip()
-            if not order_name:
-                continue
-            order_skus_total[order_name] = order_skus_total.get(order_name, 0) + 1
-            if status in SHIPPED_OK_STATUSES:
-                order_skus_ok[order_name] = order_skus_ok.get(order_name, 0) + 1
+        row = row + [''] * (8 - len(row))
+        order_needs_rows[idx] = row
+        order_name, sku, title, supplier, unit, sup_id, stage, updated = row
+        if supplier != SUPPLIER or stage != 'Ordered':
+            continue
+        by_sku.setdefault(sku, []).append(idx)
 
-    fully_shipped = set()
-    for order_name, total in order_skus_total.items():
-        if order_skus_ok.get(order_name, 0) == total:
-            fully_shipped.add(order_name)
-    return fully_shipped
+    today = time.strftime('%Y-%m-%d')
+    advanced_count = 0
+    touched_orders = set()
+    for sku, qty_to_advance in to_advance.items():
+        candidates = by_sku.get(sku, [])
+        candidates.sort(key=lambda idx: sort_key(order_needs_rows[idx][5]))
+        for idx in candidates[:qty_to_advance]:
+            order_needs_rows[idx][6] = 'Shipped'
+            order_needs_rows[idx][7] = today
+            touched_orders.add(order_needs_rows[idx][0])
+            advanced_count += 1
 
-# ── Merge logic ──────────────────────────────────────────────────────────────
-# Multiple invoices can be in flight at once when shipments run late enough to
-# overlap with the next week's order (e.g. last week's shipment arriving after
-# this week's order was already placed and possibly already reconciled). A
-# blind clear-and-replace on every upload would silently destroy whichever
-# batch's results aren't part of THIS invoice - discarding real, still-needed
-# reconciliation data for orders that haven't been marked Shipped yet.
-#
-# Instead: read whatever's currently in the tab, update/insert only the SKUs
-# touched by this invoice, and leave every other SKU's existing row exactly
-# as it was. Nothing gets dropped just because it wasn't on this particular
-# invoice.
+    return order_needs_rows, touched_orders, advanced_count
+
+# ── Merge logic for the display/audit tab (unchanged from v1) ───────────────
 
 def load_existing_reconciliation():
     rows = sheets_get(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F1000")
@@ -269,24 +299,15 @@ def load_existing_reconciliation():
     return existing
 
 def merge_results(existing, new_results):
-    # See the matching note in reconcile-ud.py: a "Missing from invoice
-    # entirely" result only describes *this* invoice, not the reconciliation
-    # history. Invoices don't always arrive in date order, so a later run
-    # must never let "missing" downgrade a SKU a prior run already confirmed
-    # as shipped.
     CONFIRMED = {'Match', 'More than submitted (likely preorder/backorder)'}
-    merged = dict(existing)  # start from what's already there
+    merged = dict(existing)
     for row in new_results:
         sku = row[0]
         prior = merged.get(sku)
-        if (
-            row[4] == 'Missing from invoice entirely - needs review'
-            and prior is not None
-            and len(prior) > 4
-            and prior[4] in CONFIRMED
-        ):
-            continue  # keep the earlier confirmed result; don't downgrade it
-        merged[sku] = row  # this invoice's data for this SKU wins
+        if (row[4] == 'Missing from quote entirely - needs review' and prior is not None
+                and len(prior) > 4 and prior[4] in CONFIRMED):
+            continue
+        merged[sku] = row
     return [merged[sku] for sku in sorted(merged.keys())]
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────
@@ -302,13 +323,8 @@ class handler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': 'Expected multipart/form-data with a PDF file'})
                 return
 
-            # Parse multipart manually using cgi (still available in this runtime)
-            fs = cgi.FieldStorage(
-                fp=io.BytesIO(body),
-                headers=self.headers,
-                environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': content_type}
-            )
-
+            fs = cgi.FieldStorage(fp=io.BytesIO(body), headers=self.headers,
+                environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': content_type})
             if 'file' not in fs:
                 self._send_json(400, {'error': 'No file field found in upload'})
                 return
@@ -316,14 +332,48 @@ class handler(BaseHTTPRequestHandler):
             file_bytes = fs['file'].file.read()
             quote_items = parse_asmodee_quote(file_bytes)
 
-            submitted_rows = sheets_get(AGG_SHEET_ID, ASMODEE_ORDER_RANGE)
-            new_results = run_comparison(submitted_rows, quote_items)
+            order_needs_rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+            submitted = load_submitted_from_order_needs(order_needs_rows)
+            new_results = run_comparison(submitted, quote_items)
 
+            # Advance Order Needs, write it back
+            updated_rows, touched_orders, advanced_count = advance_shipped_stage(order_needs_rows, new_results)
+            if advanced_count:
+                sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(updated_rows) + 1}", updated_rows)
+
+            # Apply dhg-shipped-from-supplier to any touched order whose
+            # EVERY needed unit (across every supplier) is now Shipped-or-beyond
+            STAGE_ORDER = ['NotOrdered', 'Ordered', 'Shipped', 'Arrived']
+            rows_by_order = {}
+            for row in updated_rows:
+                if row and row[0]:
+                    rows_by_order.setdefault(row[0], []).append(row)
+            tagged, tag_errors, skipped_inventory_queued = [], [], []
+            for order_name in touched_orders:
+                order_rows = rows_by_order.get(order_name, [])
+                fully_shipped = all(STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped') for r in order_rows)
+                if not fully_shipped:
+                    continue
+                try:
+                    order_id, current_status = get_order_id_and_current_status(order_name)
+                    if not order_id:
+                        tag_errors.append({'order': order_name, 'error': 'Order not found in Shopify'})
+                        continue
+                    if current_status == 'inventory-queued':
+                        skipped_inventory_queued.append(order_name)
+                        continue
+                    if current_status:
+                        remove_status_tag(order_id, f'dhg-status-{current_status}')
+                    apply_completion_tag(order_id, 'dhg-shipped-from-supplier')
+                    tagged.append(order_name)
+                except Exception as e:
+                    tag_errors.append({'order': order_name, 'error': str(e)})
+
+            # Update the audit/display tab
             ensure_reconcile_tab_exists()
             existing = load_existing_reconciliation()
             merged_results = merge_results(existing, new_results)
-
-            header = [['Shopify SKU', 'Title', 'Submitted Qty', 'Quoted Qty', 'Status', 'Order Names']]
+            header = [['Shopify SKU', 'Title', 'Ordered Qty', 'Quoted Qty', 'Status', 'Order Names']]
             sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1000")
             sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1", header)
             if merged_results:
@@ -332,9 +382,11 @@ class handler(BaseHTTPRequestHandler):
             self._send_json(200, {
                 'success': True,
                 'itemsInQuote': len(quote_items),
-                'itemsSubmitted': len(submitted_rows),
-                'newOrUpdatedThisUpload': len(new_results),
-                'totalAfterMerge': len(merged_results),
+                'skusCompared': len(new_results),
+                'unitsAdvancedToShipped': advanced_count,
+                'ordersFullyShippedAndTagged': tagged,
+                'skippedAlreadyInventoryQueued': skipped_inventory_queued,
+                'tagErrors': tag_errors,
                 'results': new_results,
             })
         except Exception as e:

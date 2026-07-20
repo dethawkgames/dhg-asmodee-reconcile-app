@@ -323,37 +323,52 @@
   <div class="masthead-inner">
     <p class="eyebrow">Detective Hawk Games · Internal Tool</p>
     <h1 class="title">Order Fulfillment Tracker</h1>
-    <p>Reconcile Asmodee shipments against what was submitted, and move orders through the supplier pipeline — ordered, shipped, and arrived.</p>
+    <p>Lock supplier orders, confirm shipments against real invoices, and move orders through the pipeline — ordered, shipped, and arrived — tracked per unit so nothing gets swept up before it's actually ready.</p>
   </div>
 </div>
 
 <div class="page">
 
   <div class="card">
-    <p class="card-label"><span class="dot"></span>Quote Reconciliation</p>
-    <h2 class="section-title">Compare This Week's Asmodee Quote</h2>
-    <p class="section-desc">Upload the shipping quote PDF to compare it against what was submitted in the Asmodee Order tab.</p>
+    <p class="card-label"><span class="dot"></span>Pre-Shipment Check</p>
+    <h2 class="section-title">Verify Asmodee Quote</h2>
+    <p class="section-desc">Upload the Sales Quote your rep sends before anything ships, to catch a wrong SKU, wrong quantity, or missed item while it's still cheap to fix. This never changes anything — it only compares against the most recently locked Asmodee order and shows you the diff. It does <em>not</em> confirm shipment; that's the Invoice, below.</p>
 
     <div class="upload-zone" id="dropZone">
       <p>Drop the quote PDF here, or choose a file</p>
       <input type="file" id="fileInput" accept="application/pdf">
       <br>
-      <button id="uploadBtn" disabled>Compare</button>
+      <button id="uploadBtn" disabled>Check Against Latest Lock</button>
     </div>
 
     <div id="result"></div>
   </div>
 
   <div class="card">
-    <p class="card-label"><span class="dot"></span>Invoice Reconciliation</p>
-    <h2 class="section-title">Compare Universal Dist Invoices</h2>
-    <p class="section-desc">Upload the invoice(s) you received (primary + secondary warehouse, if applicable) to compare against what's currently in the Universal Dist Order tab. Matches by barcode, falling back to SKU when a barcode isn't mapped yet.</p>
+    <p class="card-label"><span class="dot"></span>Mark Shipped</p>
+    <h2 class="section-title">Upload Asmodee Invoice</h2>
+    <p class="section-desc">Upload the Sales Invoice Asmodee sends once your order actually ships (not the Quote — that's a submission confirmation, not proof of shipment). This directly advances matching units from Ordered to Shipped, oldest locked order first, and tags any order that's now fully shipped.</p>
+
+    <div class="upload-zone" id="asmInvDropZone">
+      <p>Drop the invoice PDF here, or choose a file</p>
+      <input type="file" id="asmInvFileInput" accept="application/pdf">
+      <br>
+      <button id="asmInvUploadBtn" disabled>Mark Shipped From This Invoice</button>
+    </div>
+
+    <div id="asmInvResult"></div>
+  </div>
+
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Mark Shipped</p>
+    <h2 class="section-title">Upload Universal Dist Invoice(s)</h2>
+    <p class="section-desc">Upload the invoice(s) you received (primary + secondary warehouse, if applicable). This directly advances matching units from Ordered to Shipped, oldest locked order first, and tags any order that's now fully shipped. Matches by barcode, falling back to SKU when a barcode isn't mapped yet.</p>
 
     <div class="upload-zone" id="udDropZone">
       <p>Drop one or more invoice .xlsx files here, or choose files</p>
       <input type="file" id="udFileInput" accept=".xlsx" multiple>
       <br>
-      <button id="udUploadBtn" disabled>Compare</button>
+      <button id="udUploadBtn" disabled>Mark Shipped From These Invoices</button>
     </div>
 
     <div id="udResult"></div>
@@ -401,33 +416,34 @@
     <p class="card-label"><span class="dot"></span>Supplier Pipeline</p>
     <h2 class="section-title">Order Pipeline</h2>
     <p class="section-desc">
-      Click each supplier as it reaches a stage. Asmodee's "Shipped" stage checks the latest reconciliation
-      results and only marks orders where every Asmodee item fully matched; everything else is unconditional,
-      since there's no itemized confirmation available for it.
+      Every unit is tracked individually now, tied to a specific Supplier Order ID once locked — nothing can
+      get swept into a stage it was never actually part of. Asmodee and Universal Dist's Shipped stage is
+      driven entirely by the invoice uploads above; ACDD has no itemized shipment document, so it stays a
+      manual, unconditional advance like before.
     </p>
 
     <div class="stage-block">
       <div class="stage-head">
         <span class="stage-num">1</span>
-        <p class="stage-title">Ordered from Supplier</p>
+        <p class="stage-title">Lock &amp; Order — stamps everything currently unlocked with a new Supplier Order ID</p>
       </div>
       <div class="stage-buttons">
-        <button class="stage-btn" onclick="markStage('Asmodee', 'ordered')">Asmodee</button>
-        <button class="stage-btn" onclick="markStage('Universal Dist', 'ordered')">Universal Dist</button>
-        <button class="stage-btn" onclick="markStage('ACDD', 'ordered')">ACDD</button>
+        <button class="stage-btn" onclick="lockSupplierOrder('Asmodee')">Asmodee</button>
+        <button class="stage-btn" onclick="lockSupplierOrder('Universal Dist')">Universal Dist</button>
+        <button class="stage-btn" onclick="lockSupplierOrder('ACDD')">ACDD</button>
       </div>
+      <div id="lockResult"></div>
     </div>
 
     <div class="stage-block">
       <div class="stage-head">
         <span class="stage-num">2</span>
-        <p class="stage-title">Shipped from Supplier</p>
+        <p class="stage-title">Shipped from Supplier — Asmodee &amp; UD via invoice upload above; ACDD manual</p>
       </div>
       <div class="stage-buttons">
-        <button class="stage-btn" onclick="markStage('Asmodee', 'shipped')">Asmodee</button>
-        <button class="stage-btn" onclick="markStage('Universal Dist', 'shipped')">Universal Dist</button>
-        <button class="stage-btn" onclick="markStage('ACDD', 'shipped')">ACDD</button>
+        <button class="stage-btn" onclick="markAcddShipped()">ACDD</button>
       </div>
+      <div id="acddShippedResult"></div>
     </div>
 
     <div class="stage-block">
@@ -436,9 +452,9 @@
         <p class="stage-title">Shipment Arrived (at our store)</p>
       </div>
       <div class="stage-buttons">
-        <button class="stage-btn" onclick="markStage('Asmodee', 'arrived')">Asmodee</button>
-        <button class="stage-btn" onclick="markStage('Universal Dist', 'arrived')">Universal Dist</button>
-        <button class="stage-btn" onclick="markStage('ACDD', 'arrived')">ACDD</button>
+        <button class="stage-btn" onclick="markArrived('Asmodee')">Asmodee</button>
+        <button class="stage-btn" onclick="markArrived('Universal Dist')">Universal Dist</button>
+        <button class="stage-btn" onclick="markArrived('ACDD')">ACDD</button>
       </div>
     </div>
 
@@ -511,13 +527,13 @@ uploadBtn.addEventListener('click', async () => {
   if (!selectedFile) return;
 
   uploadBtn.disabled = true;
-  resultDiv.innerHTML = '<p class="loading">Parsing quote and comparing against submitted order...</p>';
+  resultDiv.innerHTML = '<p class="loading">Parsing quote and comparing against the latest locked Asmodee order...</p>';
 
   const formData = new FormData();
   formData.append('file', selectedFile);
 
   try {
-    const res = await fetch('/api/reconcile', { method: 'POST', body: formData });
+    const res = await fetch('/api/verify-asmodee-quote', { method: 'POST', body: formData });
     const data = await res.json();
 
     if (!res.ok || data.error) {
@@ -526,29 +542,34 @@ uploadBtn.addEventListener('click', async () => {
       return;
     }
 
-    const matchCount = data.results.filter(r => r[4] === 'Match').length;
-    const issueCount = data.results.length - matchCount;
+    if (data.warning) {
+      resultDiv.innerHTML = `<div class="error">${data.warning}</div>`;
+      uploadBtn.disabled = false;
+      return;
+    }
 
     let html = `<div class="summary">
       <div class="stat"><strong>${data.itemsInQuote}</strong><span>in quote</span></div>
-      <div class="stat"><strong>${data.itemsSubmitted}</strong><span>submitted</span></div>
-      <div class="stat"><strong>${matchCount}</strong><span>matched</span></div>
-      <div class="stat"><strong>${issueCount}</strong><span>need a look</span></div>
+      <div class="stat"><strong>${data.skusLocked}</strong><span>locked</span></div>
+      <div class="stat"><strong>${data.mismatchCount}</strong><span>mismatch${data.mismatchCount === 1 ? '' : 'es'}</span></div>
     </div>`;
 
-    html += '<table><thead><tr><th>SKU</th><th>Title</th><th>Submitted</th><th>Quoted</th><th>Status</th></tr></thead><tbody>';
-    for (const row of data.results) {
-      const [sku, title, submitted, quoted, status] = row;
-      html += `<tr>
-        <td>${sku}</td>
-        <td>${title}</td>
-        <td>${submitted}</td>
-        <td>${quoted}</td>
-        <td class="${statusClass(status)}">${status}</td>
-      </tr>`;
+    if (data.clean) {
+      html += `<p class="footnote">Everything on the quote matches what was locked under <strong>${data.comparedAgainstSupplierOrderId}</strong>. Safe to approve.</p>`;
+    } else {
+      html += '<table><thead><tr><th>SKU</th><th>Issue</th><th>Locked Qty</th><th>Quoted Qty</th><th>Order(s)</th></tr></thead><tbody>';
+      for (const m of data.mismatches) {
+        html += `<tr>
+          <td>${m.sku}</td>
+          <td class="status-missing">${m.issue}</td>
+          <td>${m.lockedQty}</td>
+          <td>${m.quotedQty}</td>
+          <td>${m.orderNames || '—'}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      html += `<p class="footnote">Compared against Supplier Order ID <strong>${data.comparedAgainstSupplierOrderId}</strong>.</p>`;
     }
-    html += '</tbody></table>';
-    html += '<p class="footnote">Also saved to the "Latest Reconciliation" tab in the aggregation sheet.</p>';
 
     resultDiv.innerHTML = html;
   } catch (err) {
@@ -556,6 +577,76 @@ uploadBtn.addEventListener('click', async () => {
   }
 
   uploadBtn.disabled = false;
+});
+
+const asmInvFileInput = document.getElementById('asmInvFileInput');
+const asmInvUploadBtn = document.getElementById('asmInvUploadBtn');
+const asmInvDropZone = document.getElementById('asmInvDropZone');
+const asmInvResultDiv = document.getElementById('asmInvResult');
+
+let asmInvSelectedFile = null;
+
+asmInvFileInput.addEventListener('change', (e) => {
+  asmInvSelectedFile = e.target.files[0];
+  asmInvUploadBtn.disabled = !asmInvSelectedFile;
+});
+asmInvDropZone.addEventListener('dragover', (e) => { e.preventDefault(); asmInvDropZone.classList.add('dragover'); });
+asmInvDropZone.addEventListener('dragleave', () => asmInvDropZone.classList.remove('dragover'));
+asmInvDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  asmInvDropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    asmInvSelectedFile = e.dataTransfer.files[0];
+    asmInvUploadBtn.disabled = false;
+  }
+});
+
+asmInvUploadBtn.addEventListener('click', async () => {
+  if (!asmInvSelectedFile) return;
+  asmInvUploadBtn.disabled = true;
+  asmInvResultDiv.innerHTML = '<p class="loading">Parsing invoice and advancing matched units to Shipped...</p>';
+
+  const formData = new FormData();
+  formData.append('file', asmInvSelectedFile);
+
+  try {
+    const res = await fetch('/api/reconcile', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      asmInvResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      asmInvUploadBtn.disabled = false;
+      return;
+    }
+
+    let html = `<div class="summary">
+      <div class="stat"><strong>${data.itemsInQuote}</strong><span>in invoice</span></div>
+      <div class="stat"><strong>${data.unitsAdvancedToShipped}</strong><span>units advanced</span></div>
+      <div class="stat"><strong>${data.ordersFullyShippedAndTagged.length}</strong><span>orders fully shipped</span></div>
+    </div>`;
+
+    html += '<table><thead><tr><th>SKU</th><th>Title</th><th>Ordered</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
+    for (const row of data.results) {
+      const [sku, title, ordered, invQty, status, orderNames] = row;
+      html += `<tr>
+        <td>${sku}</td><td>${title}</td><td>${ordered}</td><td>${invQty}</td>
+        <td class="${statusClass(status)}">${status}</td><td>${orderNames || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    if (data.ordersFullyShippedAndTagged.length) {
+      html += `<p class="footnote">Tagged as fully shipped: ${data.ordersFullyShippedAndTagged.join(', ')}</p>`;
+    }
+    if (data.skippedAlreadyInventoryQueued.length) {
+      html += `<p class="footnote">Already inventory-queued, left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</p>`;
+    }
+
+    asmInvResultDiv.innerHTML = html;
+  } catch (err) {
+    asmInvResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+
+  asmInvUploadBtn.disabled = false;
 });
 
 const udFileInput = document.getElementById('udFileInput');
@@ -598,7 +689,7 @@ udUploadBtn.addEventListener('click', async () => {
   if (!udSelectedFiles.length) return;
 
   udUploadBtn.disabled = true;
-  udResultDiv.innerHTML = '<p class="loading">Parsing invoice(s) and comparing against the Universal Dist Order tab...</p>';
+  udResultDiv.innerHTML = '<p class="loading">Parsing invoice(s) and advancing matched units to Shipped...</p>';
 
   const formData = new FormData();
   for (const f of udSelectedFiles) formData.append('file', f);
@@ -613,30 +704,33 @@ udUploadBtn.addEventListener('click', async () => {
       return;
     }
 
-    const matchCount = data.results.filter(r => r[5] === 'Match').length;
-    const issueCount = data.results.length - matchCount;
-
     let html = `<div class="summary">
       <div class="stat"><strong>${data.itemsInInvoices}</strong><span>in invoice(s)</span></div>
-      <div class="stat"><strong>${data.itemsSubmitted}</strong><span>submitted</span></div>
-      <div class="stat"><strong>${matchCount}</strong><span>matched</span></div>
-      <div class="stat"><strong>${issueCount}</strong><span>need a look</span></div>
+      <div class="stat"><strong>${data.unitsAdvancedToShipped}</strong><span>units advanced</span></div>
+      <div class="stat"><strong>${data.ordersFullyShippedAndTagged.length}</strong><span>orders fully shipped</span></div>
     </div>`;
 
-    html += '<table><thead><tr><th>SKU</th><th>Barcode</th><th>Title</th><th>Submitted</th><th>Invoice Qty</th><th>Status</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>SKU</th><th>Barcode</th><th>Title</th><th>Ordered</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
     for (const row of data.results) {
-      const [sku, barcode, title, submitted, invQty, status] = row;
+      const [sku, barcode, title, ordered, invQty, status, orderNames] = row;
       html += `<tr>
         <td>${sku}</td>
         <td>${barcode}</td>
         <td>${title}</td>
-        <td>${submitted}</td>
+        <td>${ordered}</td>
         <td>${invQty}</td>
         <td class="${udStatusClass(status)}">${status}</td>
+        <td>${orderNames || '—'}</td>
       </tr>`;
     }
     html += '</tbody></table>';
-    html += `<p class="footnote">Parsed ${data.invoicesParsed.map(f => `${f.filename} (${f.lineItems} items)`).join(', ')}. Also saved to the "Latest UD Reconciliation" tab.</p>`;
+    html += `<p class="footnote">Parsed ${data.invoicesParsed.map(f => `${f.filename} (${f.lineItems} items)`).join(', ')}.</p>`;
+    if (data.ordersFullyShippedAndTagged.length) {
+      html += `<p class="footnote">Tagged as fully shipped: ${data.ordersFullyShippedAndTagged.join(', ')}</p>`;
+    }
+    if (data.skippedAlreadyInventoryQueued.length) {
+      html += `<p class="footnote">Already inventory-queued, left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</p>`;
+    }
 
     udResultDiv.innerHTML = html;
   } catch (err) {
@@ -883,15 +977,93 @@ boxRecommendBtn.addEventListener('click', async () => {
   boxRecommendBtn.disabled = false;
 });
 
-async function markStage(supplier, stage) {
-  const shippedResultDiv = document.getElementById('shippedResult');
-  shippedResultDiv.innerHTML = `<p class="loading">Marking ${supplier} - ${stage}...</p>`;
+async function lockSupplierOrder(supplier) {
+  const lockResultDiv = document.getElementById('lockResult');
+  lockResultDiv.innerHTML = `<p class="loading">Locking ${supplier}...</p>`;
 
   try {
-    const res = await fetch('/api/mark-stage', {
+    const res = await fetch('/api/lock-supplier-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ supplier, stage }),
+      body: JSON.stringify({ supplier }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      lockResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      return;
+    }
+
+    if (!data.locked) {
+      lockResultDiv.innerHTML = `<div class="shipped-result">${data.message}</div>`;
+      return;
+    }
+
+    let html = `<div class="shipped-result">
+      <strong>${data.supplierOrderId}</strong> — ${data.unitsLocked} unit(s) across ${data.ordersAffected.length} order(s) locked.`;
+    if (data.ordersFullyOrderedAndTagged.length) {
+      html += `<br>Tagged as fully ordered: ${data.ordersFullyOrderedAndTagged.join(', ')}`;
+    }
+    if (data.skippedAlreadyInventoryQueued.length) {
+      html += `<br><span class="note-muted">Already inventory-queued, left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
+    }
+    if (data.tagErrors.length) {
+      html += `<br><span class="note-error">${data.tagErrors.length} tagging error(s) — check manually.</span>`;
+    }
+    html += '</div>';
+
+    html += '<table><thead><tr><th>SKU</th><th>Title</th><th>Qty</th><th>Order(s)</th></tr></thead><tbody>';
+    for (const item of data.skuOrderList) {
+      html += `<tr><td>${item.sku}</td><td>${item.title}</td><td>${item.qty}</td><td>${item.orderNames.join(', ')}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += '<p class="footnote">This is the list to submit to the supplier — also saved to the "Supplier Orders Log" tab.</p>';
+
+    lockResultDiv.innerHTML = html;
+  } catch (err) {
+    lockResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+}
+
+async function markAcddShipped() {
+  const acddResultDiv = document.getElementById('acddShippedResult');
+  acddResultDiv.innerHTML = '<p class="loading">Marking ACDD shipped...</p>';
+
+  try {
+    const res = await fetch('/api/mark-acdd-shipped', { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      acddResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      return;
+    }
+
+    let html = `<div class="shipped-result"><strong>${data.unitsAdvanced}</strong> unit(s) advanced to Shipped.`;
+    if (data.ordersFullyShippedAndTagged.length) {
+      html += `<br>Tagged as fully shipped: ${data.ordersFullyShippedAndTagged.join(', ')}`;
+    }
+    if (data.skippedAlreadyInventoryQueued.length) {
+      html += `<br><span class="note-muted">Already inventory-queued, left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
+    }
+    if (data.tagErrors.length) {
+      html += `<br><span class="note-error">${data.tagErrors.length} tagging error(s) — check manually.</span>`;
+    }
+    html += '</div>';
+    acddResultDiv.innerHTML = html;
+  } catch (err) {
+    acddResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+}
+
+async function markArrived(supplier) {
+  const shippedResultDiv = document.getElementById('shippedResult');
+  shippedResultDiv.innerHTML = `<p class="loading">Marking ${supplier} arrived...</p>`;
+
+  try {
+    const res = await fetch('/api/mark-arrived', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ supplier }),
     });
     const data = await res.json();
 
@@ -900,21 +1072,21 @@ async function markStage(supplier, stage) {
       return;
     }
 
-    let html = `<div class="shipped-result">`;
-    html += `<strong>${data.completedAndTagged.length}</strong> order(s) fully reached this stage and were tagged in Shopify`;
-    if (data.completedAndTagged.length) {
-      html += `: ${data.completedAndTagged.join(', ')}`;
+    let html = `<div class="shipped-result"><strong>${data.unitsAdvanced}</strong> unit(s) advanced to Arrived.`;
+    if (data.ordersFullyArrivedAndTagged.length) {
+      const tags = data.ordersFullyArrivedAndTagged.map(t => `${t.order} (${t.tag})`).join(', ');
+      html += `<br>Tagged as fully arrived: ${tags}`;
     }
-    if (data.skippedNotYetFullyMatched && data.skippedNotYetFullyMatched.length) {
-      html += `<br><span class="note-warn">${data.skippedNotYetFullyMatched.length} order(s) not yet fully matched on the quote, left pending: ${data.skippedNotYetFullyMatched.join(', ')}</span>`;
+    if (data.skippedAlreadyInventoryQueued.length) {
+      html += `<br><span class="note-muted">Already inventory-queued, left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
     }
-    if (data.skippedAlreadyInventoryQueued && data.skippedAlreadyInventoryQueued.length) {
-      html += `<br><span class="note-muted">${data.skippedAlreadyInventoryQueued.length} order(s) already inventory-queued (ready to pack from bins), left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</span>`;
+    if (data.removedFulfilledOrCancelled.length) {
+      html += `<br><span class="note-muted">Fulfilled/cancelled, dropped from tracking: ${data.removedFulfilledOrCancelled.join(', ')}</span>`;
     }
-    if (data.tagErrors && data.tagErrors.length) {
-      html += `<br><span class="note-error">${data.tagErrors.length} order(s) had tagging errors - check manually.</span>`;
+    if (data.tagErrors.length) {
+      html += `<br><span class="note-error">${data.tagErrors.length} tagging error(s) — check manually.</span>`;
     }
-    html += `</div>`;
+    html += '</div>';
     shippedResultDiv.innerHTML = html;
   } catch (err) {
     shippedResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
