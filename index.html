@@ -296,6 +296,16 @@
   .shipped-result .note-warn { color: #b8762a; }
   .shipped-result .note-muted { color: var(--ink-soft); }
   .shipped-result .note-error { color: var(--coral-deep); }
+
+  .pl-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .pl-toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pl-status { font-size: 13px; color: var(--ink-soft); margin: 8px 0 0; }
+  table.pl-table { margin-top: 16px; }
+  table.pl-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
+  .pl-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .pl-badge.local { background: #dff5e1; color: #1e6b34; }
+  .pl-badge.ship { background: #e7eefc; color: #1c4587; }
+  .pl-badge.partial { background: #fdf1d6; color: #93650c; margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -424,6 +434,24 @@
     </div>
 
     <div id="shippedResult"></div>
+  </div>
+
+  <div class="card">
+    <p class="card-label"><span class="dot"></span>Pack &amp; Ship</p>
+    <h2 class="section-title">Picking Lists</h2>
+    <p class="section-desc">
+      Select the orders you're packing and generate a combined, printable PDF — one picking list per order,
+      with product thumbnails, quantities, and the shipping address. Replaces iPacky's picking-list export.
+    </p>
+
+    <div class="pl-toolbar">
+      <button id="plRefreshBtn">Refresh orders</button>
+      <button id="plSelectAllBtn">Select all</button>
+      <button id="plClearBtn">Clear selection</button>
+      <button id="plGenerateBtn" disabled>Generate PDF (0 selected)</button>
+    </div>
+
+    <div id="plResult"><p class="loading">Loading orders...</p></div>
   </div>
 
 </div>
@@ -878,6 +906,111 @@ async function markStage(supplier, stage) {
     shippedResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
   }
 }
+
+// ── Picking Lists ────────────────────────────────────────────────────────
+
+const plState = { orders: [], selected: new Set() };
+const plResultDiv = document.getElementById('plResult');
+const plGenerateBtn = document.getElementById('plGenerateBtn');
+
+function plFmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function plUpdateGenerateBtn() {
+  plGenerateBtn.textContent = `Generate PDF (${plState.selected.size} selected)`;
+  plGenerateBtn.disabled = plState.selected.size === 0;
+}
+
+function plRender() {
+  if (plState.orders.length === 0) {
+    plResultDiv.innerHTML = '<p class="loading">No unfulfilled orders found.</p>';
+    return;
+  }
+  const rows = plState.orders.map((o) => `
+    <tr>
+      <td><input type="checkbox" data-id="${o.id}" ${plState.selected.has(o.id) ? 'checked' : ''}/></td>
+      <td>${o.orderNumber}</td>
+      <td>${plFmtDate(o.createdAt)}</td>
+      <td>${o.customerName}${o.city ? ' — ' + o.city + (o.provinceCode ? ', ' + o.provinceCode : '') : ''}</td>
+      <td>
+        <span class="pl-badge ${o.isLocalDelivery ? 'local' : 'ship'}">${o.isLocalDelivery ? 'LOCAL' : 'SHIP'}</span>
+        ${o.fulfillmentStatus === 'PARTIALLY_FULFILLED' ? '<span class="pl-badge partial">PARTIAL</span>' : ''}
+      </td>
+    </tr>
+  `).join('');
+
+  plResultDiv.innerHTML = `
+    <table class="pl-table">
+      <thead><tr><th></th><th>Order</th><th>Date</th><th>Ship to</th><th>Delivery</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  plResultDiv.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) plState.selected.add(cb.dataset.id);
+      else plState.selected.delete(cb.dataset.id);
+      plUpdateGenerateBtn();
+    });
+  });
+  plUpdateGenerateBtn();
+}
+
+async function plLoadOrders() {
+  plResultDiv.innerHTML = '<p class="loading">Loading orders from Shopify...</p>';
+  try {
+    const res = await fetch('/api/picking-list');
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Failed to load orders');
+    plState.orders = data.orders;
+    plState.selected.clear();
+    plRender();
+  } catch (err) {
+    plResultDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+  }
+}
+
+document.getElementById('plRefreshBtn').addEventListener('click', plLoadOrders);
+document.getElementById('plSelectAllBtn').addEventListener('click', () => {
+  plState.orders.forEach((o) => plState.selected.add(o.id));
+  plRender();
+});
+document.getElementById('plClearBtn').addEventListener('click', () => {
+  plState.selected.clear();
+  plRender();
+});
+
+plGenerateBtn.addEventListener('click', async () => {
+  plGenerateBtn.disabled = true;
+  const prevText = plGenerateBtn.textContent;
+  plGenerateBtn.textContent = 'Generating...';
+  try {
+    const res = await fetch('/api/picking-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderIds: Array.from(plState.selected) }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to generate PDF');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'picking-lists.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Error generating picking lists: ' + err.message);
+  } finally {
+    plUpdateGenerateBtn();
+  }
+});
+
+plLoadOrders();
 </script>
 
 </body>

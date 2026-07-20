@@ -1,3 +1,4 @@
 pdfplumber==0.11.4
 pyjwt[crypto]==2.9.0
 openpyxl==3.1.5
+reportlab==4.2.5
