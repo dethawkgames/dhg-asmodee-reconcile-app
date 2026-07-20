@@ -982,9 +982,9 @@ async function plLoadOrders() {
 
   const filterStatus = document.getElementById('plFilterStatus');
   if (since || until) {
-    filterStatus.textContent = `Showing unfulfilled orders${since ? ' from ' + since : ''}${until ? ' through ' + until : ''} (up to 25).`;
+    filterStatus.textContent = `Showing all unfulfilled orders${since ? ' from ' + since : ''}${until ? ' through ' + until : ''}.`;
   } else {
-    filterStatus.textContent = 'Showing the most recent 25 unfulfilled orders. Set a date range to narrow it down.';
+    filterStatus.textContent = 'Showing the most recent 25 unfulfilled orders. Set a date range to see everything in that window.';
   }
 
   try {

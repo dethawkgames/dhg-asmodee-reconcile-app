@@ -55,8 +55,9 @@ def shopify_graphql(query, variables=None):
 # ── Order list (unfulfilled/partial, excluding cancelled) ──────────────────
 
 ORDER_LIST_QUERY = '''
-query PickableOrders($first: Int!, $searchQuery: String!) {
-  orders(first: $first, query: $searchQuery, sortKey: CREATED_AT, reverse: true) {
+query PickableOrders($first: Int!, $searchQuery: String!, $cursor: String) {
+  orders(first: $first, after: $cursor, query: $searchQuery, sortKey: CREATED_AT, reverse: true) {
+    pageInfo { hasNextPage endCursor }
     edges {
       node {
         id
@@ -74,14 +75,17 @@ query PickableOrders($first: Int!, $searchQuery: String!) {
 '''
 
 DEFAULT_ORDER_LIMIT = 25
-MAX_ORDER_LIMIT = 100
+PAGE_SIZE = 50
+# Safety net for date-filtered pulls so a huge accidental range can't run away
+# indefinitely - well beyond any realistic weekly/monthly pick batch.
+MAX_FILTERED_ORDERS = 1000
 
 def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None):
-    """Most-recent-first, capped at `limit` (default/most-recent 25 - same
-    behavior as iPacky's picking list). `since`/`until` are 'YYYY-MM-DD'
-    strings and, when given, narrow to orders created in that range instead
-    of pulling from the full order history."""
-    limit = max(1, min(int(limit), MAX_ORDER_LIMIT))
+    """No date range: most-recent-first, capped at `limit` (default 25 - same
+    as iPacky's picking list). With a date range given, the 25-cap is lifted
+    entirely and every matching unfulfilled/partial order in that window is
+    returned (paginated), up to a generous safety cap."""
+    has_date_filter = bool(since or until)
 
     query_parts = ['(fulfillment_status:unfulfilled OR fulfillment_status:partial)']
     if since:
@@ -90,28 +94,42 @@ def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None):
         query_parts.append(f'created_at:<={until}')
     search_query = ' AND '.join(query_parts)
 
-    data = shopify_graphql(ORDER_LIST_QUERY, {'first': limit, 'searchQuery': search_query})
-
     results = []
-    for edge in data['orders']['edges']:
-        node = edge['node']
-        if node.get('cancelledAt'):
-            continue
-        tags = [t.lower() for t in (node.get('tags') or [])]
-        ship = node.get('shippingAddress') or {}
-        customer = node.get('customer') or {}
-        name = ship.get('name') or ' '.join(filter(None, [customer.get('firstName'), customer.get('lastName')])) or 'No name on file'
-        results.append({
-            'id': node['id'],
-            'orderNumber': node['name'],
-            'createdAt': node['createdAt'],
-            'fulfillmentStatus': node['displayFulfillmentStatus'],
-            'customerName': name,
-            'city': ship.get('city') or '',
-            'provinceCode': ship.get('provinceCode') or '',
-            'isLocalDelivery': LOCAL_DELIVERY_TAG in tags,
-        })
-    return results
+    cursor = None
+    has_next = True
+
+    if has_date_filter:
+        page_size = PAGE_SIZE
+        fetch_cap = MAX_FILTERED_ORDERS
+    else:
+        page_size = max(1, min(int(limit), DEFAULT_ORDER_LIMIT))
+        fetch_cap = page_size
+
+    while has_next and len(results) < fetch_cap:
+        data = shopify_graphql(ORDER_LIST_QUERY, {'first': page_size, 'searchQuery': search_query, 'cursor': cursor})
+        for edge in data['orders']['edges']:
+            node = edge['node']
+            if node.get('cancelledAt'):
+                continue
+            tags = [t.lower() for t in (node.get('tags') or [])]
+            ship = node.get('shippingAddress') or {}
+            customer = node.get('customer') or {}
+            name = ship.get('name') or ' '.join(filter(None, [customer.get('firstName'), customer.get('lastName')])) or 'No name on file'
+            results.append({
+                'id': node['id'],
+                'orderNumber': node['name'],
+                'createdAt': node['createdAt'],
+                'fulfillmentStatus': node['displayFulfillmentStatus'],
+                'customerName': name,
+                'city': ship.get('city') or '',
+                'provinceCode': ship.get('provinceCode') or '',
+                'isLocalDelivery': LOCAL_DELIVERY_TAG in tags,
+            })
+        page_info = data['orders']['pageInfo']
+        has_next = page_info['hasNextPage']
+        cursor = page_info['endCursor']
+
+    return results[:fetch_cap]
 
 
 # ── Order detail for PDF generation ─────────────────────────────────────────
