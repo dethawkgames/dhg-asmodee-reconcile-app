@@ -10,7 +10,6 @@ from http.server import BaseHTTPRequestHandler
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT
@@ -228,7 +227,7 @@ INK_SOFT = colors.HexColor('#6b5a63')
 
 _image_cache = {}
 
-def fetch_image_reader(url):
+def fetch_image_bytes(url):
     if not url:
         return None
     if url in _image_cache:
@@ -237,9 +236,8 @@ def fetch_image_reader(url):
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = resp.read()
-        reader = ImageReader(io.BytesIO(data))
-        _image_cache[url] = reader
-        return reader
+        _image_cache[url] = data
+        return data
     except Exception:
         return None
 
@@ -282,8 +280,8 @@ def build_order_flowables(order, styles):
     rows = [['', 'Item', 'Qty']]
     row_styles = []
     for i, li in enumerate(order['lineItems'], start=1):
-        reader = fetch_image_reader(li['imageUrl'])
-        img_cell = Image(reader, width=0.55 * inch, height=0.55 * inch) if reader else ''
+        img_bytes = fetch_image_bytes(li['imageUrl'])
+        img_cell = Image(io.BytesIO(img_bytes), width=0.55 * inch, height=0.55 * inch) if img_bytes else ''
         title_bits = f"<b>{li['title']}</b>"
         if li['variantTitle']:
             title_bits += f"<br/><font size=8 color='#6b5a63'>{li['variantTitle']}</font>"
