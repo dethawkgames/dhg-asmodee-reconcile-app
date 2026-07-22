@@ -127,6 +127,9 @@ query PickableOrders($first: Int!, $searchQuery: String!, $cursor: String) {
         tags
         customer { firstName lastName }
         shippingAddress { name city provinceCode }
+        lineItems(first: 250) {
+          edges { node { currentQuantity } }
+        }
       }
     }
   }
@@ -170,6 +173,10 @@ def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None):
             node = edge['node']
             if node.get('cancelledAt'):
                 continue
+            line_item_edges = (node.get('lineItems') or {}).get('edges') or []
+            remaining_qty = sum((e['node'].get('currentQuantity') or 0) for e in line_item_edges)
+            if remaining_qty <= 0:
+                continue  # fully refunded - nothing left to pick, even if not formally cancelled
             tags = [t.lower() for t in (node.get('tags') or [])]
             ship = node.get('shippingAddress') or {}
             customer = node.get('customer') or {}
