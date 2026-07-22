@@ -328,11 +328,54 @@
   .pl-badge.local { background: #dff5e1; color: #1e6b34; }
   .pl-badge.ship { background: #e7eefc; color: #1c4587; }
   .pl-badge.partial { background: #fdf1d6; color: #93650c; margin-left: 4px; }
+
+  .jump-nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--plum-dark);
+    padding: 10px 24px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  }
+  .jump-nav a {
+    color: var(--cream);
+    background: rgba(255,255,255,0.08);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 7px 13px;
+    border-radius: 20px;
+    white-space: nowrap;
+    transition: background 0.12s;
+  }
+  .jump-nav a:hover { background: var(--coral); }
+
+  .card { scroll-margin-top: 54px; }
+
+  .card-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .back-to-top {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 2px 0;
+  }
+  .back-to-top:hover { color: var(--coral); }
 </style>
 </head>
 <body>
 
-<div class="masthead">
+<div class="masthead" id="top">
   <div class="masthead-inner">
     <p class="eyebrow">Detective Hawk Games · Internal Tool</p>
     <h1 class="title">Order Fulfillment Tracker</h1>
@@ -340,10 +383,24 @@
   </div>
 </div>
 
+<nav class="jump-nav">
+  <a href="#card-verify-quote">Verify Quote</a>
+  <a href="#card-asmodee-invoice">Asmodee Invoice</a>
+  <a href="#card-ud-invoice">UD Invoice</a>
+  <a href="#card-record-quantity">Record Quantity</a>
+  <a href="#card-identify-surplus">Identify Surplus</a>
+  <a href="#card-box-size">Box Size</a>
+  <a href="#card-order-pipeline">Order Pipeline</a>
+  <a href="#card-picking-lists">Picking Lists</a>
+</nav>
+
 <div class="page">
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Pre-Shipment Check</p>
+  <div class="card" id="card-verify-quote">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Pre-Shipment Check</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Verify Asmodee Quote</h2>
     <p class="section-desc">Upload the Sales Quote your rep sends before anything ships, to catch a wrong SKU, wrong quantity, or missed item while it's still cheap to fix. This never changes anything — it only compares against the most recently locked Asmodee order and shows you the diff. It does <em>not</em> confirm shipment; that's the Invoice, below.</p>
 
@@ -357,8 +414,11 @@
     <div id="result"></div>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Mark Shipped</p>
+  <div class="card" id="card-asmodee-invoice">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Mark Shipped</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Upload Asmodee Invoice</h2>
     <p class="section-desc">Upload the Sales Invoice Asmodee sends once your order actually ships (not the Quote — that's a submission confirmation, not proof of shipment). This directly advances matching units from Ordered to Shipped, oldest locked order first, and tags any order that's now fully shipped.</p>
 
@@ -372,8 +432,11 @@
     <div id="asmInvResult"></div>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Mark Shipped</p>
+  <div class="card" id="card-ud-invoice">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Mark Shipped</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Upload Universal Dist Invoice(s)</h2>
     <p class="section-desc">Upload the invoice(s) you received (primary + secondary warehouse, if applicable). This directly advances matching units from Ordered to Shipped, oldest locked order first, and tags any order that's now fully shipped. Matches by barcode, falling back to SKU when a barcode isn't mapped yet.</p>
 
@@ -387,8 +450,11 @@
     <div id="udResult"></div>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
+  <div class="card" id="card-record-quantity">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Record Quantity Received</h2>
     <p class="section-desc">For this week's Universal Dist and ACDD orders, neither supplier gives itemized shipment confirmation - record what actually arrived per item so the surplus calculation below is accurate. Defaults to the ordered quantity until you adjust it.</p>
 
@@ -396,8 +462,11 @@
     <div id="qrResult"></div>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
+  <div class="card" id="card-identify-surplus">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Identify Surplus</h2>
     <p class="section-desc">Run this once you're done picking orders out of this week's supplier staging areas. For each SKU: surplus = quantity arrived (Asmodee's reconciled quote, or the recorded/ordered quantity for UD/ACDD) minus the total still needed across all unfulfilled orders from the last 30 days. Whatever's left, load into bins.</p>
 
@@ -405,8 +474,11 @@
     <div id="surplusResult"></div>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Packing</p>
+  <div class="card" id="card-box-size">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Packing</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Box Size Recommendation</h2>
     <p class="section-desc">Measure the stacked pile of items for an order (combined length, width, height) and get the smallest box that fits. "Insured fit" leaves 2" of clearance on each side; "Tight fit" has none — your call on the risk tradeoff. Satchels only show up when something's genuinely flat.</p>
 
@@ -425,8 +497,11 @@
     </details>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Supplier Pipeline</p>
+  <div class="card" id="card-order-pipeline">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Supplier Pipeline</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Order Pipeline</h2>
     <p class="section-desc">
       Every unit is tracked individually now, tied to a specific Supplier Order ID once locked — nothing can
@@ -474,8 +549,11 @@
     <div id="shippedResult"></div>
   </div>
 
-  <div class="card">
-    <p class="card-label"><span class="dot"></span>Pack &amp; Ship</p>
+  <div class="card" id="card-picking-lists">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Pack &amp; Ship</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
     <h2 class="section-title">Picking Lists</h2>
     <p class="section-desc">
       Select the orders you're packing and generate a combined, printable PDF — one picking list per order,
