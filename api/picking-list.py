@@ -17,6 +17,7 @@ from reportlab.lib.enums import TA_LEFT
 SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
 SHOPIFY_API_VERSION = '2025-01'
 LOCAL_DELIVERY_TAG = os.environ.get('LOCAL_DELIVERY_TAG', 'local-delivery').lower()
+BIN_TRACKER_URL = os.environ.get('BIN_TRACKER_URL', 'https://dhg-bin-tracker-app.vercel.app')
 
 # ── Shopify auth (same pattern as api/mark-stage.py) ────────────────────────
 
@@ -49,6 +50,65 @@ def shopify_graphql(query, variables=None):
     if result.get('errors'):
         raise Exception(f"Shopify GraphQL errors: {result['errors']}")
     return result['data']
+
+
+# ── First-shipment check (same definition used for thank-you cards) ────────
+# "First shipment" = customer has no OTHER order that has ever been fulfilled,
+# NOT just their first order placed - someone can place several orders before
+# any of them ship.
+
+def is_first_shipment(order_node):
+    customer = order_node.get('customer')
+    if not customer:
+        return True  # guest checkout - treat as first shipment
+    order_id = order_node['id']
+    prior_orders = ((customer.get('orders') or {}).get('edges')) or []
+    has_fulfilled = any(
+        e['node']['id'] != order_id and e['node'].get('displayFulfillmentStatus') == 'FULFILLED'
+        for e in prior_orders
+    )
+    return not has_fulfilled
+
+
+# ── Bin tracker lookup (same API the Admin Block extension calls) ──────────
+
+def fetch_bin_info(order_id):
+    """Returns the bin tracker's per-line-item bin data for this order, or
+    None if the lookup fails (network error, tracker down, etc.) so callers
+    can distinguish 'unknown' from 'confirmed not in a bin'."""
+    try:
+        qs = urllib.parse.urlencode({'orderId': order_id})
+        req = urllib.request.Request(f'{BIN_TRACKER_URL}/api/order-bin-info?{qs}')
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return json.loads(resp.read())
+    except Exception:
+        return None
+
+
+def build_bin_lookup(bin_response):
+    """productId -> queue of location-lists, one entry per matching Shopify
+    line item, in the order the bin tracker returned them. A queue (rather
+    than a single value) handles the rare case of the same product appearing
+    as more than one line item on an order."""
+    lookup = {}
+    if not bin_response:
+        return lookup
+    for li in bin_response.get('lineItems', []):
+        pid = li.get('productId')
+        if not pid:
+            continue
+        lookup.setdefault(pid, []).append(li.get('locations') or [])
+    return lookup
+
+
+def format_bin_locations(locations):
+    if not locations:
+        return None
+    parts = [loc.get('binNumber') for loc in locations if loc.get('binNumber')]
+    if not parts:
+        return None
+    label = 'Bin' if len(parts) == 1 else 'Bins'
+    return f"{label}: {', '.join(parts)}"
 
 
 # ── Order list (unfulfilled/partial, excluding cancelled) ──────────────────
@@ -140,7 +200,14 @@ query OrderDetail($id: ID!) {
     name
     createdAt
     tags
-    customer { firstName lastName }
+    customer {
+      id
+      firstName
+      lastName
+      orders(first: 50) {
+        edges { node { id displayFulfillmentStatus } }
+      }
+    }
     shippingAddress { name address1 address2 city provinceCode zip country }
     lineItems(first: 250) {
       edges {
@@ -153,7 +220,7 @@ query OrderDetail($id: ID!) {
           variant {
             title
             image { url(transform: {maxWidth: 200, maxHeight: 200}) }
-            product { featuredImage { url(transform: {maxWidth: 200, maxHeight: 200}) } }
+            product { id featuredImage { url(transform: {maxWidth: 200, maxHeight: 200}) } }
           }
         }
       }
@@ -181,6 +248,8 @@ def get_order_details(order_ids):
         ]
         address = '\n'.join(filter(None, address_lines)) or 'No shipping address on file'
 
+        bin_lookup = build_bin_lookup(fetch_bin_info(order_id))
+
         line_items = []
         for edge in node['lineItems']['edges']:
             li = edge['node']
@@ -197,18 +266,26 @@ def get_order_details(order_ids):
                 or (product.get('featuredImage') or {}).get('url')
             )
             variant_title = variant.get('title')
+
+            product_id = product.get('id')
+            bin_locations = None
+            if product_id and bin_lookup.get(product_id):
+                bin_locations = bin_lookup[product_id].pop(0)
+
             line_items.append({
                 'title': li['title'],
                 'sku': li.get('sku') or '',
                 'quantity': qty,
                 'variantTitle': variant_title if variant_title and variant_title != 'Default Title' else '',
                 'imageUrl': image_url,
+                'binLabel': format_bin_locations(bin_locations),
             })
 
         orders.append({
             'orderNumber': node['name'],
             'createdAt': node['createdAt'],
             'isLocalDelivery': LOCAL_DELIVERY_TAG in tags,
+            'isFirstShipment': is_first_shipment(node),
             'shippingName': name,
             'shippingAddress': address,
             'lineItems': line_items,
@@ -269,6 +346,11 @@ def build_order_flowables(order, styles):
     ]))
     flow.append(header_table)
     flow.append(Paragraph(f"Ordered {format_date(order['createdAt'])}", styles['DateLine']))
+
+    if order.get('isFirstShipment'):
+        flow.append(Spacer(1, 6))
+        flow.append(Paragraph('★ FIRST SHIPMENT — add a thank-you card', styles['BadgeFirstShipment']))
+
     flow.append(Spacer(1, 12))
 
     flow.append(Paragraph('SHIP TO', styles['ShipToLabel']))
@@ -287,6 +369,8 @@ def build_order_flowables(order, styles):
             title_bits += f"<br/><font size=8 color='#6b5a63'>{li['variantTitle']}</font>"
         if li['sku']:
             title_bits += f"<br/><font size=8 color='#6b5a63'>SKU: {li['sku']}</font>"
+        if li.get('binLabel'):
+            title_bits += f"<br/><font size=9 color='#059B9C'><b>{li['binLabel']}</b></font>"
         rows.append([img_cell, Paragraph(title_bits, styles['ItemTitle']), Paragraph(str(li['quantity']), styles['QtyBox'])])
 
     items_table = Table(rows, colWidths=[0.75 * inch, 5.05 * inch, 1.0 * inch], repeatRows=1)
@@ -313,6 +397,7 @@ def generate_pdf(orders):
     styles.add(ParagraphStyle('DateLine', fontSize=10, textColor=INK_SOFT))
     styles.add(ParagraphStyle('BadgeLocal', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor('#1e6b34'), backColor=colors.HexColor('#dff5e1'), borderPadding=5))
     styles.add(ParagraphStyle('BadgeShip', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor('#1c4587'), backColor=colors.HexColor('#e7eefc'), borderPadding=5))
+    styles.add(ParagraphStyle('BadgeFirstShipment', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor('#8a5a00'), backColor=colors.HexColor('#fdf1d6'), borderPadding=5))
     styles.add(ParagraphStyle('ShipToLabel', fontSize=8, fontName='Helvetica-Bold', textColor=INK_SOFT))
     styles.add(ParagraphStyle('ShipToName', fontSize=13, fontName='Helvetica-Bold', textColor=INK))
     styles.add(ParagraphStyle('ShipToAddr', fontSize=10, textColor=INK))
