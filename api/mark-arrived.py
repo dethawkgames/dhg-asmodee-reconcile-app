@@ -69,6 +69,21 @@ def sheets_put(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
+def sheets_clear(spreadsheet_id, range_str):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
+    req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
+def sheets_append(spreadsheet_id, range_str, values):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS'
+    body = json.dumps({'values': values}).encode()
+    req = urllib.request.Request(url, data=body, method='POST', headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
 # ── Shopify auth + tagging ───────────────────────────────────────────────────
 
 def get_shopify_token():
@@ -93,7 +108,9 @@ def shopify_graphql(query, variables=None):
     return result['data']
 
 def get_order_details(order_name):
-    """Returns (id, current_status, displayFulfillmentStatus, cancelledAt, lineItems)."""
+    """Returns (id, current_status, displayFulfillmentStatus, cancelledAt, lineItems).
+    lineItems includes sku, product tags, and currentQuantity (used for the
+    per-unit cancellation/refund check below, not just whole-order status)."""
     data = shopify_graphql('''
         query getOrder($q: String!) {
             orders(first: 1, query: $q) {
@@ -101,7 +118,7 @@ def get_order_details(order_name):
                     node {
                         id name tags displayFulfillmentStatus cancelledAt
                         lineItems(first: 50) {
-                            edges { node { sku product { tags } } }
+                            edges { node { sku currentQuantity product { tags } } }
                         }
                     }
                 }
@@ -198,8 +215,55 @@ def mark_arrived(supplier):
     advanced_count = 0
     touched_orders = set()
 
-    for row in rows:
+    # Build actual current-quantity map per (order, sku) from the same data
+    # already fetched above, for the per-unit cancellation/refund check.
+    current_qty = {}
+    for name, (order_id, current_status, fulfillment, cancelled_at, line_items) in current_details.items():
+        if cancelled_at:
+            current_qty[name] = {}
+            continue
+        qtys = {}
+        for li in line_items:
+            qtys[li['sku']] = qtys.get(li['sku'], 0) + (li.get('currentQuantity') or 0)
+        current_qty[name] = qtys
+
+    by_pair = {}
+    for idx, row in enumerate(rows):
         if not row or not row[0]:
+            continue
+        by_pair.setdefault((row[0], row[1]), []).append(idx)
+
+    to_delete = set()
+    blocked_pairs = set()
+    manual_review_flags = []
+    for (order_name, sku), idxs in by_pair.items():
+        if order_name not in current_qty:
+            continue
+        actual = current_qty[order_name].get(sku, 0)
+        existing = len(idxs)
+        if actual >= existing:
+            continue
+        excess = existing - actual
+        unlocked = [i for i in idxs if not rows[i][5]]
+        if len(unlocked) >= excess:
+            for i in sorted(unlocked, key=lambda i: -int(rows[i][4]))[:excess]:
+                to_delete.add(i)
+        else:
+            blocked_pairs.add((order_name, sku))
+            manual_review_flags.append([
+                order_name, sku, rows[idxs[0]][2], '',
+                f'Shopify qty dropped to {actual} but {existing} Order Needs rows exist '
+                f'and only {len(unlocked)} are unlocked - {excess - len(unlocked)} committed '
+                f'unit(s) need manual reconciliation (cancellation/refund detected)',
+                today,
+            ])
+    if manual_review_flags:
+        sheets_append(AGG_SHEET_ID, "'Needs Manual Review'!A2:F1000", manual_review_flags)
+
+    for idx, row in enumerate(rows):
+        if not row or not row[0]:
+            continue
+        if idx in to_delete:
             continue
         row = row + [''] * (8 - len(row))
         order_name, sku, title, row_supplier, unit, sup_id, stage, updated = row
@@ -209,7 +273,7 @@ def mark_arrived(supplier):
             removed_fulfilled_or_cancelled.add(order_name)
             continue
 
-        if row_supplier == supplier and stage == 'Shipped':
+        if row_supplier == supplier and stage == 'Shipped' and (order_name, sku) not in blocked_pairs:
             row[6] = 'Arrived'
             row[7] = today
             advanced_count += 1
@@ -217,7 +281,8 @@ def mark_arrived(supplier):
 
         padded_rows.append(row)
 
-    if advanced_count:
+    sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+    if padded_rows:
         sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(padded_rows) + 1}", padded_rows)
 
     # Recompute order-level completion for every touched order
@@ -257,6 +322,7 @@ def mark_arrived(supplier):
         'skippedAlreadyInventoryQueued': skipped_inventory_queued,
         'removedFulfilledOrCancelled': sorted(removed_fulfilled_or_cancelled),
         'tagErrors': tag_errors,
+        'blockedByCancellationOrRefund': [{'order': o, 'sku': s} for o, s in sorted(blocked_pairs)],
     }
 
 # ── HTTP handler ─────────────────────────────────────────────────────────────

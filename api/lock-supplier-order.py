@@ -87,6 +87,13 @@ def sheets_append(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
+def sheets_clear(spreadsheet_id, range_str):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
+    req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
 # ── Shopify auth + tagging (same pattern as mark-stage.py) ──────────────────
 
 def get_shopify_token():
@@ -149,6 +156,92 @@ def remove_status_tag(order_id, tag):
         }
     ''', {'id': order_id, 'tags': [tag]})
 
+# ── Cancellation / refund safety check ───────────────────────────────────
+# Customers can cancel a whole order, cancel individual line items, or
+# refund part of a quantity - and this can happen after a unit is already
+# committed to a supplier order. Every stage action re-checks Shopify's
+# CURRENT line-item quantity for any order it's about to touch before
+# acting, so nothing gets locked/shipped/arrived for a unit that's no
+# longer actually needed.
+
+def reconcile_against_shopify(rows, touched_order_names):
+    """Cross-checks Order Needs rows for the given orders against Shopify's
+    live line-item quantities. Removes unlocked (no Supplier Order ID)
+    excess rows automatically. Excess among LOCKED rows gets flagged to
+    'Needs Manual Review' instead of silently un-committing something
+    already ordered from a supplier - those (order, sku) pairs are excluded
+    from this run entirely so the calling action can't touch them.
+
+    Returns (cleaned_rows, blocked_pairs).
+    """
+    if not touched_order_names:
+        return rows, set()
+
+    name_query = '(' + ' OR '.join(f'name:{n.lstrip("#")}' for n in touched_order_names) + ')'
+    data = shopify_graphql('''
+        query getOrders($q: String!) {
+            orders(first: 250, query: $q) {
+                edges {
+                    node {
+                        name cancelledAt
+                        lineItems(first: 50) { edges { node { sku currentQuantity } } }
+                    }
+                }
+            }
+        }
+    ''', {'q': name_query})
+
+    current_qty = {}
+    for edge in data['orders']['edges']:
+        node = edge['node']
+        if node['cancelledAt']:
+            current_qty[node['name']] = {}
+            continue
+        qtys = {}
+        for li in node['lineItems']['edges']:
+            sku = li['node']['sku']
+            qtys[sku] = qtys.get(sku, 0) + (li['node']['currentQuantity'] or 0)
+        current_qty[node['name']] = qtys
+
+    by_pair = {}
+    for idx, row in enumerate(rows):
+        if not row or not row[0]:
+            continue
+        by_pair.setdefault((row[0], row[1]), []).append(idx)
+
+    to_delete = set()
+    blocked_pairs = set()
+    manual_review_flags = []
+    today = time.strftime('%Y-%m-%d')
+
+    for (order_name, sku), idxs in by_pair.items():
+        if order_name not in current_qty:
+            continue
+        actual = current_qty[order_name].get(sku, 0)
+        existing = len(idxs)
+        if actual >= existing:
+            continue
+        excess = existing - actual
+        unlocked = [i for i in idxs if not rows[i][5]]
+        if len(unlocked) >= excess:
+            for i in sorted(unlocked, key=lambda i: -int(rows[i][4]))[:excess]:
+                to_delete.add(i)
+        else:
+            blocked_pairs.add((order_name, sku))
+            manual_review_flags.append([
+                order_name, sku, rows[idxs[0]][2], '',
+                f'Shopify qty dropped to {actual} but {existing} Order Needs rows exist '
+                f'and only {len(unlocked)} are unlocked - {excess - len(unlocked)} committed '
+                f'unit(s) need manual reconciliation (cancellation/refund detected)',
+                today,
+            ])
+
+    if manual_review_flags:
+        sheets_append(AGG_SHEET_ID, "'Needs Manual Review'!A2:F1000", manual_review_flags)
+
+    cleaned_rows = [r for i, r in enumerate(rows) if i not in to_delete]
+    return cleaned_rows, blocked_pairs
+
 # ── Core logic ────────────────────────────────────────────────────────────
 
 def lock_supplier_order(supplier):
@@ -167,6 +260,15 @@ def lock_supplier_order(supplier):
     rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
     if not rows:
         return {'locked': False, 'message': 'No rows in Order Needs tab.'}
+
+    # Safety check: re-verify against Shopify's live quantities before
+    # locking anything, in case a customer cancelled or refunded (in whole
+    # or in part) since these rows were created.
+    candidate_order_names = sorted({
+        row[0] for row in rows
+        if row and row[0] and len(row) >= 7 and row[3] == supplier and not row[5] and row[6] == 'NotOrdered'
+    })
+    rows, blocked_pairs = reconcile_against_shopify(rows, candidate_order_names)
 
     # Generate a unique ID for today - if this supplier was already locked
     # today (a second lock in the same day), suffix with -2, -3, etc.
@@ -191,6 +293,8 @@ def lock_supplier_order(supplier):
         order_name, sku, title, row_supplier, unit, sup_id, stage, updated = row
         if row_supplier != supplier or sup_id or stage != 'NotOrdered':
             continue
+        if (order_name, sku) in blocked_pairs:
+            continue
         row[5] = new_id
         row[6] = 'Ordered'
         row[7] = today
@@ -205,9 +309,11 @@ def lock_supplier_order(supplier):
     if not locked_rows:
         return {'locked': False, 'message': f'Nothing currently unlocked for {supplier} - nothing to order.'}
 
-    # Write the updated Order Needs tab back in full (simplest safe approach
-    # given the Sheets API has no row-level partial update by filter)
-    sheets_put(AGG_SHEET_ID, ORDER_NEEDS_RANGE.replace('50000', str(len(rows) + 1)), rows)
+    # Write the updated Order Needs tab back in full (clear first, since the
+    # cancellation/refund check above may have shrunk the row count)
+    sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+    if rows:
+        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(rows) + 1}", rows)
 
     # Append to the permanent Supplier Orders Log - one row per SKU
     log_append_rows = []
@@ -262,6 +368,7 @@ def lock_supplier_order(supplier):
         'ordersFullyOrderedAndTagged': tagged,
         'skippedAlreadyInventoryQueued': skipped_inventory_queued,
         'tagErrors': tag_errors,
+        'blockedByCancellationOrRefund': [{'order': o, 'sku': s} for o, s in sorted(blocked_pairs)],
     }
 
 # ── HTTP handler ─────────────────────────────────────────────────────────

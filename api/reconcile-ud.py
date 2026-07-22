@@ -118,6 +118,14 @@ def sheets_clear(spreadsheet_id, range_str):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
+def sheets_append(spreadsheet_id, range_str, values):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS'
+    body = json.dumps({'values': values}).encode()
+    req = urllib.request.Request(url, data=body, method='POST', headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
 def ensure_reconcile_tab_exists():
     token = get_google_token()
     url = f'https://sheets.googleapis.com/v4/spreadsheets/{AGG_SHEET_ID}?fields=sheets.properties.title'
@@ -193,9 +201,68 @@ def remove_status_tag(order_id, tag):
         mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }
     ''', {'id': order_id, 'tags': [tag]})
 
+# ── Cancellation / refund safety check (same logic as lock-supplier-order.py) ─
+
+def reconcile_against_shopify(rows, touched_order_names):
+    if not touched_order_names:
+        return rows, set()
+    name_query = '(' + ' OR '.join(f'name:{n.lstrip("#")}' for n in touched_order_names) + ')'
+    data = shopify_graphql('''
+        query getOrders($q: String!) {
+            orders(first: 250, query: $q) {
+                edges { node { name cancelledAt lineItems(first: 50) { edges { node { sku currentQuantity } } } } }
+            }
+        }
+    ''', {'q': name_query})
+    current_qty = {}
+    for edge in data['orders']['edges']:
+        node = edge['node']
+        if node['cancelledAt']:
+            current_qty[node['name']] = {}
+            continue
+        qtys = {}
+        for li in node['lineItems']['edges']:
+            sku = li['node']['sku']
+            qtys[sku] = qtys.get(sku, 0) + (li['node']['currentQuantity'] or 0)
+        current_qty[node['name']] = qtys
+    by_pair = {}
+    for idx, row in enumerate(rows):
+        if not row or not row[0]:
+            continue
+        by_pair.setdefault((row[0], row[1]), []).append(idx)
+    to_delete = set()
+    blocked_pairs = set()
+    manual_review_flags = []
+    today = time.strftime('%Y-%m-%d')
+    for (order_name, sku), idxs in by_pair.items():
+        if order_name not in current_qty:
+            continue
+        actual = current_qty[order_name].get(sku, 0)
+        existing = len(idxs)
+        if actual >= existing:
+            continue
+        excess = existing - actual
+        unlocked = [i for i in idxs if not rows[i][5]]
+        if len(unlocked) >= excess:
+            for i in sorted(unlocked, key=lambda i: -int(rows[i][4]))[:excess]:
+                to_delete.add(i)
+        else:
+            blocked_pairs.add((order_name, sku))
+            manual_review_flags.append([
+                order_name, sku, rows[idxs[0]][2], '',
+                f'Shopify qty dropped to {actual} but {existing} Order Needs rows exist '
+                f'and only {len(unlocked)} are unlocked - {excess - len(unlocked)} committed '
+                f'unit(s) need manual reconciliation (cancellation/refund detected)',
+                today,
+            ])
+    if manual_review_flags:
+        sheets_append(AGG_SHEET_ID, "'Needs Manual Review'!A2:F1000", manual_review_flags)
+    cleaned_rows = [r for i, r in enumerate(rows) if i not in to_delete]
+    return cleaned_rows, blocked_pairs
+
 # ── Comparison logic (submitted now from Order Needs, not the Order tab) ────
 
-def load_submitted_from_order_needs(order_needs_rows, barcode_by_sku):
+def load_submitted_from_order_needs(order_needs_rows, barcode_by_sku, blocked_pairs=frozenset()):
     submitted = {}  # sku -> {barcode, quantity, title, order_names(set)}
     for row in order_needs_rows:
         if not row or not row[0]:
@@ -203,6 +270,8 @@ def load_submitted_from_order_needs(order_needs_rows, barcode_by_sku):
         row = row + [''] * (8 - len(row))
         order_name, sku, title, supplier, unit, sup_id, stage, updated = row
         if supplier != SUPPLIER or stage != 'Ordered':
+            continue
+        if (order_name, sku) in blocked_pairs:
             continue
         if sku not in submitted:
             submitted[sku] = {'barcode': barcode_by_sku.get(sku, ''), 'quantity': 0, 'title': title, 'order_names': set()}
@@ -283,7 +352,7 @@ def sort_key(supplier_order_id):
         return (0, supplier_order_id)
     return (1, supplier_order_id)
 
-def advance_shipped_stage(order_needs_rows, comparison_results):
+def advance_shipped_stage(order_needs_rows, comparison_results, blocked_pairs=frozenset()):
     to_advance = {row[0]: shipped_qty_for_sku(row) for row in comparison_results if shipped_qty_for_sku(row) > 0}
     if not to_advance:
         return order_needs_rows, set(), 0
@@ -296,6 +365,8 @@ def advance_shipped_stage(order_needs_rows, comparison_results):
         order_needs_rows[idx] = row
         order_name, sku, title, supplier, unit, sup_id, stage, updated = row
         if supplier != SUPPLIER or stage != 'Ordered':
+            continue
+        if (order_name, sku) in blocked_pairs:
             continue
         by_sku.setdefault(sku, []).append(idx)
 
@@ -379,11 +450,19 @@ class handler(BaseHTTPRequestHandler):
             invoice_items_by_key = aggregate_invoice_items(all_items)
             barcode_by_sku = load_ud_barcode_by_sku()
             order_needs_rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
-            submitted = load_submitted_from_order_needs(order_needs_rows, barcode_by_sku)
+
+            candidate_order_names = sorted({
+                row[0] for row in order_needs_rows
+                if row and row[0] and len(row) >= 7 and row[3] == SUPPLIER and row[6] == 'Ordered'
+            })
+            order_needs_rows, blocked_pairs = reconcile_against_shopify(order_needs_rows, candidate_order_names)
+
+            submitted = load_submitted_from_order_needs(order_needs_rows, barcode_by_sku, blocked_pairs)
             new_results = run_comparison(submitted, invoice_items_by_key)
 
-            updated_rows, touched_orders, advanced_count = advance_shipped_stage(order_needs_rows, new_results)
-            if advanced_count:
+            updated_rows, touched_orders, advanced_count = advance_shipped_stage(order_needs_rows, new_results, blocked_pairs)
+            sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+            if updated_rows:
                 sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(updated_rows) + 1}", updated_rows)
 
             STAGE_ORDER = ['NotOrdered', 'Ordered', 'Shipped', 'Arrived']
@@ -431,6 +510,7 @@ class handler(BaseHTTPRequestHandler):
                 'skippedAlreadyInventoryQueued': skipped_inventory_queued,
                 'tagErrors': tag_errors,
                 'results': new_results,
+                'blockedByCancellationOrRefund': [{'order': o, 'sku': s} for o, s in sorted(blocked_pairs)],
             })
         except Exception as e:
             import traceback

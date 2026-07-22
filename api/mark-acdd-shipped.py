@@ -57,6 +57,21 @@ def sheets_put(spreadsheet_id, range_str, values):
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
 
+def sheets_clear(spreadsheet_id, range_str):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:clear'
+    req = urllib.request.Request(url, data=b'', method='POST', headers={'Authorization': f'Bearer {token}'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
+def sheets_append(spreadsheet_id, range_str, values):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS'
+    body = json.dumps({'values': values}).encode()
+    req = urllib.request.Request(url, data=body, method='POST', headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
 def get_shopify_token():
     data = urllib.parse.urlencode({
         'grant_type': 'client_credentials',
@@ -99,10 +114,75 @@ def remove_status_tag(order_id, tag):
         mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }
     ''', {'id': order_id, 'tags': [tag]})
 
+# ── Cancellation / refund safety check (same logic as lock-supplier-order.py) ─
+
+def reconcile_against_shopify(rows, touched_order_names):
+    if not touched_order_names:
+        return rows, set()
+    name_query = '(' + ' OR '.join(f'name:{n.lstrip("#")}' for n in touched_order_names) + ')'
+    data = shopify_graphql('''
+        query getOrders($q: String!) {
+            orders(first: 250, query: $q) {
+                edges { node { name cancelledAt lineItems(first: 50) { edges { node { sku currentQuantity } } } } }
+            }
+        }
+    ''', {'q': name_query})
+    current_qty = {}
+    for edge in data['orders']['edges']:
+        node = edge['node']
+        if node['cancelledAt']:
+            current_qty[node['name']] = {}
+            continue
+        qtys = {}
+        for li in node['lineItems']['edges']:
+            sku = li['node']['sku']
+            qtys[sku] = qtys.get(sku, 0) + (li['node']['currentQuantity'] or 0)
+        current_qty[node['name']] = qtys
+    by_pair = {}
+    for idx, row in enumerate(rows):
+        if not row or not row[0]:
+            continue
+        by_pair.setdefault((row[0], row[1]), []).append(idx)
+    to_delete = set()
+    blocked_pairs = set()
+    manual_review_flags = []
+    today = time.strftime('%Y-%m-%d')
+    for (order_name, sku), idxs in by_pair.items():
+        if order_name not in current_qty:
+            continue
+        actual = current_qty[order_name].get(sku, 0)
+        existing = len(idxs)
+        if actual >= existing:
+            continue
+        excess = existing - actual
+        unlocked = [i for i in idxs if not rows[i][5]]
+        if len(unlocked) >= excess:
+            for i in sorted(unlocked, key=lambda i: -int(rows[i][4]))[:excess]:
+                to_delete.add(i)
+        else:
+            blocked_pairs.add((order_name, sku))
+            manual_review_flags.append([
+                order_name, sku, rows[idxs[0]][2], '',
+                f'Shopify qty dropped to {actual} but {existing} Order Needs rows exist '
+                f'and only {len(unlocked)} are unlocked - {excess - len(unlocked)} committed '
+                f'unit(s) need manual reconciliation (cancellation/refund detected)',
+                today,
+            ])
+    if manual_review_flags:
+        sheets_append(AGG_SHEET_ID, "'Needs Manual Review'!A2:F1000", manual_review_flags)
+    cleaned_rows = [r for i, r in enumerate(rows) if i not in to_delete]
+    return cleaned_rows, blocked_pairs
+
 def mark_acdd_shipped():
     rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
     if not rows:
         return {'shipped': False, 'message': 'No rows in Order Needs tab.'}
+
+    candidate_order_names = sorted({
+        row[0] for row in rows
+        if row and row[0] and len(row) >= 7 and row[3] == SUPPLIER and row[6] == 'Ordered'
+    })
+    rows, blocked_pairs = reconcile_against_shopify(rows, candidate_order_names)
 
     today = time.strftime('%Y-%m-%d')
     padded_rows = []
@@ -113,14 +193,15 @@ def mark_acdd_shipped():
         if not row or not row[0]:
             continue
         row = row + [''] * (8 - len(row))
-        if row[3] == SUPPLIER and row[6] == 'Ordered':
+        if row[3] == SUPPLIER and row[6] == 'Ordered' and (row[0], row[1]) not in blocked_pairs:
             row[6] = 'Shipped'
             row[7] = today
             advanced_count += 1
             touched_orders.add(row[0])
         padded_rows.append(row)
 
-    if advanced_count:
+    sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+    if padded_rows:
         sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(padded_rows) + 1}", padded_rows)
 
     rows_by_order = {}
@@ -154,6 +235,7 @@ def mark_acdd_shipped():
         'ordersFullyShippedAndTagged': tagged,
         'skippedAlreadyInventoryQueued': skipped_inventory_queued,
         'tagErrors': tag_errors,
+        'blockedByCancellationOrRefund': [{'order': o, 'sku': s} for o, s in sorted(blocked_pairs)],
     }
 
 class handler(BaseHTTPRequestHandler):
