@@ -202,6 +202,19 @@
     font-size: 14px;
   }
   .footnote { color: var(--ink-soft); font-size: 12.5px; margin-top: 16px; }
+  .not-on-invoice { margin-top: 16px; }
+  .not-on-invoice summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--plum-dark);
+    padding: 8px 0;
+    list-style: none;
+  }
+  .not-on-invoice summary::-webkit-details-marker { display: none; }
+  .not-on-invoice summary::before { content: '▸ '; color: var(--coral); }
+  .not-on-invoice[open] summary::before { content: '▾ '; }
+  .not-on-invoice table { opacity: 0.75; }
 
   .qr-supplier-head {
     font-size: 13px; font-weight: 700; color: var(--plum-dark);
@@ -625,15 +638,16 @@ asmInvUploadBtn.addEventListener('click', async () => {
       <div class="stat"><strong>${data.ordersFullyShippedAndTagged.length}</strong><span>orders fully shipped</span></div>
     </div>`;
 
-    html += '<table><thead><tr><th>SKU</th><th>Title</th><th>Ordered</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
-    for (const row of data.results) {
-      const [sku, title, ordered, invQty, status, orderNames] = row;
-      html += `<tr>
-        <td>${sku}</td><td>${title}</td><td>${ordered}</td><td>${invQty}</td>
-        <td class="${statusClass(status)}">${status}</td><td>${orderNames || '—'}</td>
-      </tr>`;
+    const onInvoice = data.results.filter(r => r[3] > 0);
+    const notOnInvoice = data.results.filter(r => r[3] === 0);
+
+    html += renderInvoiceTable(onInvoice);
+    if (notOnInvoice.length) {
+      html += `<details class="not-on-invoice"><summary>${notOnInvoice.length} other item(s) still on order, not on this invoice</summary>`;
+      html += renderInvoiceTable(notOnInvoice);
+      html += `</details>`;
     }
-    html += '</tbody></table>';
+
     if (data.ordersFullyShippedAndTagged.length) {
       html += `<p class="footnote">Tagged as fully shipped: ${data.ordersFullyShippedAndTagged.join(', ')}</p>`;
     }
@@ -648,6 +662,34 @@ asmInvUploadBtn.addEventListener('click', async () => {
 
   asmInvUploadBtn.disabled = false;
 });
+
+function renderInvoiceTable(rows) {
+  if (!rows.length) return '<p class="footnote">Nothing here.</p>';
+  let html = '<table><thead><tr><th>SKU</th><th>Title</th><th>Ordered</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
+  for (const row of rows) {
+    const [sku, title, ordered, invQty, status, orderNames] = row;
+    html += `<tr>
+      <td>${sku}</td><td>${title}</td><td>${ordered}</td><td>${invQty}</td>
+      <td class="${statusClass(status)}">${status}</td><td>${orderNames || '—'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderUdInvoiceTable(rows) {
+  if (!rows.length) return '<p class="footnote">Nothing here.</p>';
+  let html = '<table><thead><tr><th>SKU</th><th>Barcode</th><th>Title</th><th>Ordered</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
+  for (const row of rows) {
+    const [sku, barcode, title, ordered, invQty, status, orderNames] = row;
+    html += `<tr>
+      <td>${sku}</td><td>${barcode}</td><td>${title}</td><td>${ordered}</td><td>${invQty}</td>
+      <td class="${udStatusClass(status)}">${status}</td><td>${orderNames || '—'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  return html;
+}
 
 const udFileInput = document.getElementById('udFileInput');
 const udUploadBtn = document.getElementById('udUploadBtn');
@@ -710,20 +752,16 @@ udUploadBtn.addEventListener('click', async () => {
       <div class="stat"><strong>${data.ordersFullyShippedAndTagged.length}</strong><span>orders fully shipped</span></div>
     </div>`;
 
-    html += '<table><thead><tr><th>SKU</th><th>Barcode</th><th>Title</th><th>Ordered</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
-    for (const row of data.results) {
-      const [sku, barcode, title, ordered, invQty, status, orderNames] = row;
-      html += `<tr>
-        <td>${sku}</td>
-        <td>${barcode}</td>
-        <td>${title}</td>
-        <td>${ordered}</td>
-        <td>${invQty}</td>
-        <td class="${udStatusClass(status)}">${status}</td>
-        <td>${orderNames || '—'}</td>
-      </tr>`;
+    const onInvoice = data.results.filter(r => r[4] > 0);
+    const notOnInvoice = data.results.filter(r => r[4] === 0);
+
+    html += renderUdInvoiceTable(onInvoice);
+    if (notOnInvoice.length) {
+      html += `<details class="not-on-invoice"><summary>${notOnInvoice.length} other item(s) still on order, not on this invoice</summary>`;
+      html += renderUdInvoiceTable(notOnInvoice);
+      html += `</details>`;
     }
-    html += '</tbody></table>';
+
     html += `<p class="footnote">Parsed ${data.invoicesParsed.map(f => `${f.filename} (${f.lineItems} items)`).join(', ')}.</p>`;
     if (data.ordersFullyShippedAndTagged.length) {
       html += `<p class="footnote">Tagged as fully shipped: ${data.ordersFullyShippedAndTagged.join(', ')}</p>`;

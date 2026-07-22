@@ -31,7 +31,8 @@ EMAIL_LIFECYCLE_TAGS = {
 # positions entirely) ────────────────────────────────────────────────────────
 
 SKU_X = 43.7
-DESC_X = 102.8
+DESC_X = 100  # was 102.8, which sat just above real word positions (~102.757)
+              # for the first description word, silently dropping it
 GTIN_X_MIN = 240
 GTIN_X_MAX = 260
 QTY_X_MIN = 320
@@ -83,10 +84,15 @@ def parse_asmodee_quote(file_bytes):
                         'description': ' '.join(desc_words),
                         'quantity': int(qty_val) if qty_val.isdigit() else qty_val,
                     }
-                elif sku_word and not gtin_word and not qty_word and current_item is not None:
-                    fragment = sku_word['text']
-                    if len(fragment) <= 6 and fragment.isalnum():
-                        current_item['sku'] = current_item['sku'] + fragment
+                elif not gtin_word and not qty_word and current_item is not None:
+                    if sku_word:
+                        fragment = sku_word['text']
+                        if len(fragment) <= 6 and fragment.isalnum():
+                            current_item['sku'] = current_item['sku'] + fragment
+                    desc_words = [w['text'] for w in row_words
+                                  if w is not sku_word and w['x0'] >= DESC_X and w['x0'] < 180]
+                    if desc_words:
+                        current_item['description'] = (current_item['description'] + ' ' + ' '.join(desc_words)).strip()
             if current_item:
                 line_items.append(current_item)
     return line_items
