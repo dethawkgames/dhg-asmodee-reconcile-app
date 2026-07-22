@@ -26,18 +26,28 @@ EMAIL_LIFECYCLE_TAGS = {
 
 # ── PDF parsing (unchanged from v1 - already validated) ──────────────────────
 
-SKU_X = 43.2
-DESC_X = 101.6
-MSRP_X_MIN = 350
-QTY_X_MIN = 415
-QTY_X_MAX = 435
+# ── PDF parsing (Invoice format - column positions verified against real
+# Asmodee invoice PDFs, NOT the Quote format, which has different column
+# positions entirely) ────────────────────────────────────────────────────────
+
+SKU_X = 43.7
+DESC_X = 102.8
+GTIN_X_MIN = 240
+GTIN_X_MAX = 260
+QTY_X_MIN = 320
+QTY_X_MAX = 345
 
 def parse_asmodee_quote(file_bytes):
+    """Despite the name (kept for compatibility with the rest of this file),
+    this parses the Asmodee INVOICE format - the shipment-confirmation
+    document, not the pre-shipment Sales Quote. Column positions differ
+    significantly between the two document types."""
     line_items = []
-    hit_total = False
+    hit_subtotal = False
+    header_seen = False  # persists across pages - the header row only appears once
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
-            if hit_total:
+            if hit_subtotal:
                 break
             words = page.extract_words()
             lines = {}
@@ -46,48 +56,40 @@ def parse_asmodee_quote(file_bytes):
                 lines.setdefault(top_key, []).append(w)
             sorted_tops = sorted(lines.keys())
             current_item = None
-            header_seen = False
             for top in sorted_tops:
                 row_words = sorted(lines[top], key=lambda w: w['x0'])
                 row_text = ' '.join(w['text'] for w in row_words)
-                if row_text.strip().startswith('Total $') or row_text.strip().startswith('Total'):
-                    hit_total = True
+                if row_text.strip().startswith('Subtotal'):
+                    hit_subtotal = True
                     break
-                if 'Description' in row_text and 'MSRP' in row_text:
+                if row_text.strip().startswith('No.') and 'Description' in row_text:
                     header_seen = True
                     continue
                 if not header_seen:
                     continue
-                if row_text.strip() in ('Line', 'Amount', 'Unit', 'Excl.', 'Tax') or row_text.strip().startswith('Line Amount'):
+                if row_text.strip().startswith('Home Page'):
                     continue
+                gtin_word = next((w for w in row_words if GTIN_X_MIN <= w['x0'] <= GTIN_X_MAX), None)
                 qty_word = next((w for w in row_words if QTY_X_MIN <= w['x0'] <= QTY_X_MAX), None)
                 sku_word = next((w for w in row_words if abs(w['x0'] - SKU_X) < 2), None)
-                if qty_word and sku_word:
+                if gtin_word and qty_word and sku_word:
                     if current_item:
                         line_items.append(current_item)
-                    desc_words = [w['text'] for w in row_words if w['x0'] >= DESC_X and w['x0'] < MSRP_X_MIN]
+                    desc_words = [w['text'] for w in row_words if w['x0'] >= DESC_X and w['x0'] < 180]
                     qty_val = qty_word['text']
                     current_item = {
                         'sku': sku_word['text'],
+                        'barcode': gtin_word['text'],
                         'description': ' '.join(desc_words),
                         'quantity': int(qty_val) if qty_val.isdigit() else qty_val,
                     }
-                elif qty_word and not sku_word and current_item is not None:
-                    desc_words = [w['text'] for w in row_words if w['x0'] >= DESC_X and w['x0'] < MSRP_X_MIN]
-                    if desc_words:
-                        line_items.append(current_item)
-                        qty_val = qty_word['text']
-                        current_item = {
-                            'sku': None, 'description': ' '.join(desc_words),
-                            'quantity': int(qty_val) if qty_val.isdigit() else qty_val, 'is_fee': True,
-                        }
-                elif sku_word and not qty_word and current_item is not None:
-                    fragment = row_words[0]['text']
-                    if len(row_words) == 1 and len(fragment) <= 6:
+                elif sku_word and not gtin_word and not qty_word and current_item is not None:
+                    fragment = sku_word['text']
+                    if len(fragment) <= 6 and fragment.isalnum():
                         current_item['sku'] = current_item['sku'] + fragment
             if current_item:
                 line_items.append(current_item)
-    return [item for item in line_items if not item.get('is_fee')]
+    return line_items
 
 # ── Google Sheets auth + access ──────────────────────────────────────────────
 
