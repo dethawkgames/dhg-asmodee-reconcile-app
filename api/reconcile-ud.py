@@ -263,7 +263,6 @@ def apply_received_inventory(sku_qty_map, reference_doc_uri):
             'inventoryItemId': item_id,
             'locationId': location_id,
             'delta': qty,
-            'changeFromQuantity': None,
         })
 
     if not changes:

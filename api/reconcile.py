@@ -204,11 +204,13 @@ def remove_status_tag(order_id, tag):
 # count. Nothing before this ever did, so on_hand only ever went down (via
 # fulfillment) and never back up, silently drifting negative/stale over time.
 #
-# Uses a delta adjustment (inventoryAdjustQuantities, changeFromQuantity=None)
-# rather than a read-then-set. A read-then-set has a race window: if a new
-# order commits between the read and the write, the write clobbers it. A pure
-# delta has no such window - it can never touch `committed`, only `on_hand`,
-# so open-order commitments are never at risk.
+# Uses a delta adjustment (inventoryAdjustQuantities, changeFromQuantity
+# omitted entirely - this store's pinned API version, 2025-01, doesn't define
+# that field on InventoryChangeInput) rather than a read-then-set. A
+# read-then-set has a race window: if a new order commits between the read
+# and the write, the write clobbers it. A pure delta has no such window - it
+# can never touch `committed`, only `on_hand`, so open-order commitments are
+# never at risk.
 
 _LOCATION_ID_CACHE = {}
 
@@ -266,7 +268,6 @@ def apply_received_inventory(sku_qty_map, reference_doc_uri):
             'inventoryItemId': item_id,
             'locationId': location_id,
             'delta': qty,
-            'changeFromQuantity': None,
         })
 
     if not changes:
