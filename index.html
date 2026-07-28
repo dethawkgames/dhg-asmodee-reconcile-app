@@ -716,6 +716,20 @@ asmInvUploadBtn.addEventListener('click', async () => {
       <div class="stat"><strong>${data.ordersFullyShippedAndTagged.length}</strong><span>orders fully shipped</span></div>
     </div>`;
 
+    if (data.inventoryReceived) {
+      const inv = data.inventoryReceived;
+      html += `<div class="summary">
+        <div class="stat"><strong>${inv.unitsPosted}</strong><span>units added to inventory</span></div>
+        <div class="stat"><strong>${inv.skusPosted}</strong><span>SKUs posted</span></div>
+      </div>`;
+      if (inv.skippedNoInventoryItem && inv.skippedNoInventoryItem.length) {
+        html += `<p class="footnote">No matching Shopify variant, inventory NOT posted for: ${inv.skippedNoInventoryItem.join(', ')}</p>`;
+      }
+      if (inv.userErrors && inv.userErrors.length) {
+        html += `<p class="footnote" style="color:#b3392b">Inventory posting errors: ${inv.userErrors.map(e => e.message).join('; ')}</p>`;
+      }
+    }
+
     const onInvoice = data.results.filter(r => r[3] > 0);
     const notOnInvoice = data.results.filter(r => r[3] === 0);
 
@@ -829,6 +843,20 @@ udUploadBtn.addEventListener('click', async () => {
       <div class="stat"><strong>${data.unitsAdvancedToShipped}</strong><span>units advanced</span></div>
       <div class="stat"><strong>${data.ordersFullyShippedAndTagged.length}</strong><span>orders fully shipped</span></div>
     </div>`;
+
+    if (data.inventoryReceived) {
+      const inv = data.inventoryReceived;
+      html += `<div class="summary">
+        <div class="stat"><strong>${inv.unitsPosted}</strong><span>units added to inventory</span></div>
+        <div class="stat"><strong>${inv.skusPosted}</strong><span>SKUs posted</span></div>
+      </div>`;
+      if (inv.skippedNoInventoryItem && inv.skippedNoInventoryItem.length) {
+        html += `<p class="footnote">No matching Shopify variant, inventory NOT posted for: ${inv.skippedNoInventoryItem.join(', ')}</p>`;
+      }
+      if (inv.userErrors && inv.userErrors.length) {
+        html += `<p class="footnote" style="color:#b3392b">Inventory posting errors: ${inv.userErrors.map(e => e.message).join('; ')}</p>`;
+      }
+    }
 
     const onInvoice = data.results.filter(r => r[4] > 0);
     const notOnInvoice = data.results.filter(r => r[4] === 0);
