@@ -201,6 +201,97 @@ def remove_status_tag(order_id, tag):
         mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }
     ''', {'id': order_id, 'tags': [tag]})
 
+# ── Inventory receiving (additive, race-safe) ────────────────────────────────
+# Same design as reconcile.py (Asmodee) - see that file for the full
+# rationale. Every unit that physically arrives, allocated or surplus, posts
+# an additive on_hand delta so the count reflects what actually came in the
+# door, instead of only ever going down via fulfillment.
+
+_LOCATION_ID_CACHE = {}
+
+def get_location_id():
+    if 'id' in _LOCATION_ID_CACHE:
+        return _LOCATION_ID_CACHE['id']
+    data = shopify_graphql('query { locations(first: 1) { edges { node { id } } } }')
+    edges = data['locations']['edges']
+    if not edges:
+        raise Exception('No Shopify location found - cannot post inventory receipts')
+    _LOCATION_ID_CACHE['id'] = edges[0]['node']['id']
+    return _LOCATION_ID_CACHE['id']
+
+def get_inventory_item_ids(skus):
+    """Batched SKU -> InventoryItem GID lookup. Chunks at 50 SKUs per query
+    to stay well under Shopify's query-string limits."""
+    result = {}
+    skus = [s for s in skus if s]
+    for i in range(0, len(skus), 50):
+        chunk = skus[i:i + 50]
+        query_str = ' OR '.join(f'sku:{s}' for s in chunk)
+        data = shopify_graphql('''
+            query getVariants($q: String!) {
+                productVariants(first: 50, query: $q) {
+                    edges { node { sku inventoryItem { id } } }
+                }
+            }
+        ''', {'q': query_str})
+        for edge in data['productVariants']['edges']:
+            node = edge['node']
+            if node['sku']:
+                result[node['sku']] = node['inventoryItem']['id']
+    return result
+
+def apply_received_inventory(sku_qty_map, reference_doc_uri):
+    """sku_qty_map: {sku: qty_received}. Posts one additive on_hand delta per
+    SKU per invoice via a single batched mutation. Never reads current
+    inventory and never touches `committed` - purely additive, so it can't
+    clobber a commitment made concurrently by a new order."""
+    sku_qty_map = {sku: qty for sku, qty in sku_qty_map.items() if sku and qty}
+    if not sku_qty_map:
+        return {'skusPosted': 0, 'unitsPosted': 0, 'skippedNoInventoryItem': [], 'userErrors': []}
+
+    location_id = get_location_id()
+    item_ids = get_inventory_item_ids(list(sku_qty_map.keys()))
+
+    changes = []
+    skipped = []
+    for sku, qty in sku_qty_map.items():
+        item_id = item_ids.get(sku)
+        if not item_id:
+            skipped.append(sku)
+            continue
+        changes.append({
+            'inventoryItemId': item_id,
+            'locationId': location_id,
+            'delta': qty,
+            'changeFromQuantity': None,
+        })
+
+    if not changes:
+        return {'skusPosted': 0, 'unitsPosted': 0, 'skippedNoInventoryItem': skipped, 'userErrors': []}
+
+    data = shopify_graphql('''
+        mutation adjustReceived($input: InventoryAdjustQuantitiesInput!) {
+            inventoryAdjustQuantities(input: $input) {
+                inventoryAdjustmentGroup { id }
+                userErrors { field message }
+            }
+        }
+    ''', {
+        'input': {
+            'reason': 'received',
+            'name': 'on_hand',
+            'referenceDocumentUri': reference_doc_uri,
+            'changes': changes,
+        }
+    })
+    user_errors = data['inventoryAdjustQuantities']['userErrors']
+    return {
+        'skusPosted': len(changes),
+        'unitsPosted': sum(c['delta'] for c in changes),
+        'skippedNoInventoryItem': skipped,
+        'userErrors': user_errors,
+    }
+
 # ── Cancellation / refund safety check (same logic as lock-supplier-order.py) ─
 
 def reconcile_against_shopify(rows, touched_order_names):
@@ -448,6 +539,20 @@ class handler(BaseHTTPRequestHandler):
                 invoices_parsed.append({'filename': f.filename, 'lineItems': len(items)})
 
             invoice_items_by_key = aggregate_invoice_items(all_items)
+
+            # Post physical receipt to Shopify inventory for every unit
+            # across all uploaded invoices - allocated or surplus, regardless
+            # of Order Needs state. Independent of the advancement below, so
+            # a stage-advancement issue never blocks the inventory count.
+            received_sku_qty = {}
+            for v in invoice_items_by_key.values():
+                sku = (v.get('sku') or '').strip()
+                qty = v.get('quantity')
+                if sku and isinstance(qty, int):
+                    received_sku_qty[sku] = received_sku_qty.get(sku, 0) + qty
+            invoice_ref = f'gid://dhg-asmodee-reconcile-app/UDInvoice/{time.strftime("%Y-%m-%d")}'
+            inventory_result = apply_received_inventory(received_sku_qty, invoice_ref)
+
             barcode_by_sku = load_ud_barcode_by_sku()
             order_needs_rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
 
@@ -504,6 +609,7 @@ class handler(BaseHTTPRequestHandler):
                 'success': True,
                 'invoicesParsed': invoices_parsed,
                 'itemsInInvoices': len(invoice_items_by_key),
+                'inventoryReceived': inventory_result,
                 'skusCompared': len(new_results),
                 'unitsAdvancedToShipped': advanced_count,
                 'ordersFullyShippedAndTagged': tagged,
