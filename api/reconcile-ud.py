@@ -241,10 +241,19 @@ def get_inventory_item_ids(skus):
     return result
 
 def apply_received_inventory(sku_qty_map, reference_doc_uri):
-    """sku_qty_map: {sku: qty_received}. Posts one additive on_hand delta per
-    SKU per invoice via a single batched mutation. Never reads current
-    inventory and never touches `committed` - purely additive, so it can't
-    clobber a commitment made concurrently by a new order."""
+    """sku_qty_map: {sku: qty_received}. Posts one additive `available` delta
+    per SKU per invoice via a single batched mutation. `available` is the
+    only base state this mutation can adjust directly for a receiving event
+    (on_hand and committed are derived, not directly writable) - increasing
+    `available` correspondingly increases `on_hand`, which is what we're
+    actually trying to fix. Never reads current inventory and never touches
+    `committed` - purely additive, so it can't clobber a commitment made
+    concurrently by a new order.
+
+    This mutation is all-or-nothing: if Shopify returns any userErrors, NONE
+    of the requested changes were applied, so skusPosted/unitsPosted only
+    reflect changes once userErrors comes back empty - never report a
+    change as posted based on what was merely attempted."""
     sku_qty_map = {sku: qty for sku, qty in sku_qty_map.items() if sku and qty}
     if not sku_qty_map:
         return {'skusPosted': 0, 'unitsPosted': 0, 'skippedNoInventoryItem': [], 'userErrors': []}
@@ -278,17 +287,20 @@ def apply_received_inventory(sku_qty_map, reference_doc_uri):
     ''', {
         'input': {
             'reason': 'received',
-            'name': 'on_hand',
+            'name': 'available',
             'referenceDocumentUri': reference_doc_uri,
             'changes': changes,
         }
     })
     user_errors = data['inventoryAdjustQuantities']['userErrors']
+    if user_errors:
+        # All-or-nothing mutation - nothing was actually applied.
+        return {'skusPosted': 0, 'unitsPosted': 0, 'skippedNoInventoryItem': skipped, 'userErrors': user_errors}
     return {
         'skusPosted': len(changes),
         'unitsPosted': sum(c['delta'] for c in changes),
         'skippedNoInventoryItem': skipped,
-        'userErrors': user_errors,
+        'userErrors': [],
     }
 
 # ── Cancellation / refund safety check (same logic as lock-supplier-order.py) ─
