@@ -280,19 +280,21 @@ def determine_arrived_tag(line_items):
 
 def reconcile_against_shopify(rows, touched_order_names):
     if not touched_order_names:
-        return rows, set(), {}
+        return rows, set(), [], set()
     name_query = '(' + ' OR '.join(f'name:{n.lstrip("#")}' for n in touched_order_names) + ')'
     data = shopify_graphql('''
         query getOrders($q: String!) {
             orders(first: 250, query: $q) {
-                edges { node { name cancelledAt lineItems(first: 50) { edges { node { sku currentQuantity } } } } }
+                edges { node { name cancelledAt displayFulfillmentStatus lineItems(first: 50) { edges { node { sku currentQuantity } } } } }
             }
         }
     ''', {'q': name_query})
     current_qty = {}
+    fulfilled_or_cancelled_orders = set()
     for edge in data['orders']['edges']:
         node = edge['node']
-        if node['cancelledAt']:
+        if node['cancelledAt'] or node['displayFulfillmentStatus'] == 'FULFILLED':
+            fulfilled_or_cancelled_orders.add(node['name'])
             current_qty[node['name']] = {}
             continue
         qtys = {}
@@ -300,6 +302,18 @@ def reconcile_against_shopify(rows, touched_order_names):
             sku = li['node']['sku']
             qtys[sku] = qtys.get(sku, 0) + (li['node']['currentQuantity'] or 0)
         current_qty[node['name']] = qtys
+
+    # Drop every row for a now-Fulfilled or now-Cancelled order outright -
+    # these should never be advanced or matched against invoice quantities,
+    # regardless of which SKU they're for. Mirrors mark-arrived.py's
+    # removed_fulfilled_or_cancelled behavior, which the original blanket
+    # button had but this invoice-driven rewrite initially omitted.
+    fulfilled_or_cancelled_rows = {
+        idx for idx, row in enumerate(rows)
+        if row and row[0] and row[0] in fulfilled_or_cancelled_orders
+    }
+    rows = [r for i, r in enumerate(rows) if i not in fulfilled_or_cancelled_rows]
+
     by_pair = {}
     for idx, row in enumerate(rows):
         if not row or not row[0]:
@@ -331,7 +345,7 @@ def reconcile_against_shopify(rows, touched_order_names):
                 today,
             ])
     cleaned_rows = [r for i, r in enumerate(rows) if i not in to_delete]
-    return cleaned_rows, blocked_pairs, manual_review_flags
+    return cleaned_rows, blocked_pairs, manual_review_flags, fulfilled_or_cancelled_orders
 
 # ── Comparison logic: invoice vs rows currently 'Shipped' (awaiting arrival) ─
 
@@ -509,7 +523,7 @@ def process_invoice(file_fields_bytes_and_names, dry_run):
         row[0] for row in order_needs_rows
         if row and row[0] and len(row) >= 7 and row[3] == SUPPLIER and row[6] == 'Shipped'
     })
-    order_needs_rows, blocked_pairs, manual_review_flags = reconcile_against_shopify(order_needs_rows, candidate_order_names)
+    order_needs_rows, blocked_pairs, manual_review_flags, removed_fulfilled_or_cancelled = reconcile_against_shopify(order_needs_rows, candidate_order_names)
 
     awaiting = load_awaiting_arrival_from_order_needs(order_needs_rows, barcode_by_sku, blocked_pairs)
     new_results = run_comparison(awaiting, invoice_items_by_key)
@@ -577,6 +591,7 @@ def process_invoice(file_fields_bytes_and_names, dry_run):
         'tagErrors': tag_errors,
         'results': new_results,
         'blockedByCancellationOrRefund': [{'order': o, 'sku': s} for o, s in sorted(blocked_pairs)],
+        'removedFulfilledOrCancelled': sorted(removed_fulfilled_or_cancelled),
         'manualReviewFlagsRaised': manual_review_flags if dry_run else (manual_review_flags if manual_review_flags else []),
         'note': 'No Shopify inventory was adjusted by this endpoint - see file header comment for why.' if not dry_run else
                 'DRY RUN: no writes were made to the Order Needs sheet, the reconciliation tab, the Needs Manual Review tab, or Shopify tags.',

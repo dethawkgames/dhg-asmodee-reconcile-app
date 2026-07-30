@@ -1022,6 +1022,9 @@ asmArrivedUploadBtn.addEventListener('click', async () => {
     if (data.blockedByCancellationOrRefund && data.blockedByCancellationOrRefund.length) {
       html += `<p class="footnote" style="color:#b3392b">Blocked by cancellation/refund mismatch, needs manual review: ${data.blockedByCancellationOrRefund.map(b => `${b.order} (${b.sku})`).join(', ')}</p>`;
     }
+    if (data.removedFulfilledOrCancelled && data.removedFulfilledOrCancelled.length) {
+      html += `<p class="footnote">Already Fulfilled or Cancelled in Shopify, stale Order Needs rows dropped and not touched: ${data.removedFulfilledOrCancelled.join(', ')}</p>`;
+    }
     html += `<p class="footnote">${data.note}</p>`;
 
     asmArrivedResultDiv.innerHTML = html;
@@ -1129,6 +1132,9 @@ udArrivedUploadBtn.addEventListener('click', async () => {
     }
     if (data.blockedByCancellationOrRefund && data.blockedByCancellationOrRefund.length) {
       html += `<p class="footnote" style="color:#b3392b">Blocked by cancellation/refund mismatch, needs manual review: ${data.blockedByCancellationOrRefund.map(b => `${b.order} (${b.sku})`).join(', ')}</p>`;
+    }
+    if (data.removedFulfilledOrCancelled && data.removedFulfilledOrCancelled.length) {
+      html += `<p class="footnote">Already Fulfilled or Cancelled in Shopify, stale Order Needs rows dropped and not touched: ${data.removedFulfilledOrCancelled.join(', ')}</p>`;
     }
     html += `<p class="footnote">${data.note}</p>`;
 
