@@ -6,6 +6,9 @@
     "api/reconcile-ud.py": {
       "maxDuration": 30
     },
+    "api/reconcile-arrived-ud.py": {
+      "maxDuration": 30
+    },
     "api/quantity-received.py": {
       "maxDuration": 30
     },

@@ -118,6 +118,8 @@
     max-width: 680px;
   }
 
+  .dry-run-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 12px; cursor: pointer; }
+  .dry-run-toggle input { cursor: pointer; }
   .upload-zone {
     border: 2px dashed rgba(56,17,47,0.18);
     border-radius: 12px;
@@ -450,6 +452,26 @@
     <div id="udResult"></div>
   </div>
 
+  <div class="card" id="card-ud-arrived-invoice">
+    <div class="card-top-row">
+      <p class="card-label"><span class="dot"></span>Mark Arrived</p>
+      <a href="#top" class="back-to-top">↑ Top</a>
+    </div>
+    <h2 class="section-title">Upload Universal Dist Arrival Invoice(s)</h2>
+    <p class="section-desc">Upload the invoice(s) confirming what physically arrived. This only advances units currently sitting at Shipped for Universal Dist, matched against this invoice's actual line items (barcode, falling back to SKU) — units still awaiting a <em>different</em> invoice are left untouched. Does not touch Shopify inventory (already posted when the invoice first advanced units to Shipped). Check "Dry run" to preview the match without writing anything.</p>
+
+    <label class="dry-run-toggle"><input type="checkbox" id="udArrivedDryRun" checked> Dry run (preview only, no writes)</label>
+
+    <div class="upload-zone" id="udArrivedDropZone">
+      <p>Drop one or more invoice .xlsx files here, or choose files</p>
+      <input type="file" id="udArrivedFileInput" accept=".xlsx" multiple>
+      <br>
+      <button id="udArrivedUploadBtn" disabled>Mark Arrived From These Invoices</button>
+    </div>
+
+    <div id="udArrivedResult"></div>
+  </div>
+
   <div class="card" id="card-record-quantity">
     <div class="card-top-row">
       <p class="card-label"><span class="dot"></span>Receive-to-Fulfill Routing</p>
@@ -541,9 +563,9 @@
       </div>
       <div class="stage-buttons">
         <button class="stage-btn" onclick="markArrived('Asmodee')">Asmodee</button>
-        <button class="stage-btn" onclick="markArrived('Universal Dist')">Universal Dist</button>
         <button class="stage-btn" onclick="markArrived('ACDD')">ACDD</button>
       </div>
+      <p class="footnote">Universal Dist is now invoice-driven — use the "Upload Universal Dist Arrival Invoice(s)" card above instead of a blanket button, so overlapping invoices in transit at the same time can't get swept up together.</p>
     </div>
 
     <div id="shippedResult"></div>
@@ -882,6 +904,115 @@ udUploadBtn.addEventListener('click', async () => {
   }
 
   udUploadBtn.disabled = false;
+});
+
+// ── UD Arrived Invoice Upload ────────────────────────────────────────────────
+function renderUdArrivedTable(rows) {
+  if (!rows.length) return '<p class="footnote">Nothing here.</p>';
+  let html = '<table><thead><tr><th>SKU</th><th>Barcode</th><th>Title</th><th>Awaiting Arrival</th><th>Invoice Qty</th><th>Status</th><th>Order(s)</th></tr></thead><tbody>';
+  for (const row of rows) {
+    const [sku, barcode, title, awaiting, invQty, status, orderNames] = row;
+    html += `<tr>
+      <td>${sku}</td><td>${barcode}</td><td>${title}</td><td>${awaiting}</td><td>${invQty}</td>
+      <td class="${udStatusClass(status)}">${status}</td><td>${orderNames || '—'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+const udArrivedFileInput = document.getElementById('udArrivedFileInput');
+const udArrivedUploadBtn = document.getElementById('udArrivedUploadBtn');
+const udArrivedDropZone = document.getElementById('udArrivedDropZone');
+const udArrivedResultDiv = document.getElementById('udArrivedResult');
+const udArrivedDryRun = document.getElementById('udArrivedDryRun');
+
+let udArrivedSelectedFiles = [];
+
+udArrivedFileInput.addEventListener('change', (e) => {
+  udArrivedSelectedFiles = Array.from(e.target.files);
+  udArrivedUploadBtn.disabled = udArrivedSelectedFiles.length === 0;
+});
+
+udArrivedDropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  udArrivedDropZone.classList.add('dragover');
+});
+udArrivedDropZone.addEventListener('dragleave', () => udArrivedDropZone.classList.remove('dragover'));
+udArrivedDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  udArrivedDropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    udArrivedSelectedFiles = Array.from(e.dataTransfer.files);
+    udArrivedUploadBtn.disabled = false;
+  }
+});
+
+udArrivedUploadBtn.addEventListener('click', async () => {
+  if (!udArrivedSelectedFiles.length) return;
+
+  const dryRun = udArrivedDryRun.checked;
+  udArrivedUploadBtn.disabled = true;
+  udArrivedResultDiv.innerHTML = `<p class="loading">${dryRun ? 'Previewing' : 'Parsing invoice(s) and advancing'} matched units ${dryRun ? '' : 'to Arrived '}...</p>`;
+
+  const formData = new FormData();
+  for (const f of udArrivedSelectedFiles) formData.append('file', f);
+  formData.append('dry_run', dryRun ? 'true' : 'false');
+
+  try {
+    const res = await fetch('/api/reconcile-arrived-ud', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      udArrivedResultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+      udArrivedUploadBtn.disabled = false;
+      return;
+    }
+
+    const unitsKey = dryRun ? 'unitsThatWouldAdvanceToArrived' : 'unitsAdvancedToArrived';
+    const ordersKey = dryRun ? 'ordersThatWouldBeFullyArrivedAndTagged' : 'ordersFullyArrivedAndTagged';
+
+    let html = '';
+    if (dryRun) {
+      html += `<p class="footnote" style="font-weight:600">DRY RUN — nothing below has been written yet.</p>`;
+    }
+    html += `<div class="summary">
+      <div class="stat"><strong>${data.itemsInInvoices}</strong><span>in invoice(s)</span></div>
+      <div class="stat"><strong>${data[unitsKey]}</strong><span>units ${dryRun ? 'would advance' : 'advanced'}</span></div>
+      <div class="stat"><strong>${data[ordersKey].length}</strong><span>orders fully arrived</span></div>
+    </div>`;
+
+    const onInvoice = data.results.filter(r => r[4] > 0);
+    const notOnInvoice = data.results.filter(r => r[4] === 0);
+
+    html += renderUdArrivedTable(onInvoice);
+    if (notOnInvoice.length) {
+      html += `<details class="not-on-invoice"><summary>${notOnInvoice.length} other item(s) still awaiting arrival, not on this invoice</summary>`;
+      html += renderUdArrivedTable(notOnInvoice);
+      html += `</details>`;
+    }
+
+    html += `<p class="footnote">Parsed ${data.invoicesParsed.map(f => `${f.filename} (${f.lineItems} items)`).join(', ')}.</p>`;
+    if (data[ordersKey].length) {
+      const label = dryRun
+        ? data[ordersKey].map(t => `${t.order} (would apply ${t.wouldApply})`).join(', ')
+        : data[ordersKey].map(t => `${t.order} (${t.tag})`).join(', ');
+      html += `<p class="footnote">${dryRun ? 'Would tag' : 'Tagged'} as fully arrived: ${label}</p>`;
+    }
+    if (data.skippedAlreadyInventoryQueued.length) {
+      html += `<p class="footnote">Already inventory-queued, left untouched: ${data.skippedAlreadyInventoryQueued.join(', ')}</p>`;
+    }
+    if (data.blockedByCancellationOrRefund && data.blockedByCancellationOrRefund.length) {
+      html += `<p class="footnote" style="color:#b3392b">Blocked by cancellation/refund mismatch, needs manual review: ${data.blockedByCancellationOrRefund.map(b => `${b.order} (${b.sku})`).join(', ')}</p>`;
+    }
+    html += `<p class="footnote">${data.note}</p>`;
+
+    udArrivedResultDiv.innerHTML = html;
+  } catch (err) {
+    udArrivedResultDiv.innerHTML = `<div class="error">Request failed: ${err.message}</div>`;
+  }
+
+  udArrivedUploadBtn.disabled = false;
 });
 
 // ── Record Quantity Received ────────────────────────────────────────────────
