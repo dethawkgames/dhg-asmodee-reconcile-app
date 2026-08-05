@@ -13,6 +13,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT
+from reportlab.graphics.barcode import code128
 
 SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
 SHOPIFY_API_VERSION = '2025-01'
@@ -352,6 +353,19 @@ def build_order_flowables(order, styles):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
     ]))
     flow.append(header_table)
+
+    # Order-number barcode - encodes the bare number (no '#'), exactly what
+    # Order Check's lookup expects from a scan. humanReadable prints the
+    # digits underneath so it's still readable if the scanner misses.
+    barcode_value = order['orderNumber'].lstrip('#')
+    order_barcode = code128.Code128(
+        barcode_value, barHeight=0.35 * inch, barWidth=0.011 * inch,
+        humanReadable=True, fontSize=8,
+    )
+    flow.append(Spacer(1, 4))
+    flow.append(order_barcode)
+    flow.append(Spacer(1, 6))
+
     flow.append(Paragraph(f"Ordered {format_date(order['createdAt'])}", styles['DateLine']))
 
     if order.get('isFirstShipment'):

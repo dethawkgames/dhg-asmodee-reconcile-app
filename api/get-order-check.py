@@ -109,12 +109,23 @@ query getOrder($q: String!) {
 def get_shopify_order_lines(order_number):
     """Returns (order_name, cancelled, fulfillment_status, line_items) or
     (None, None, None, None) if not found. line_items excludes fully
-    refunded lines (currentQuantity 0), per DHG standing rule."""
-    data = shopify_graphql(ORDER_LOOKUP_QUERY, {'q': f'name:{order_number}'})
+    refunded lines (currentQuantity 0), per DHG standing rule.
+
+    order_number may come in with or without the '#' (barcode scans have no
+    prefix; the Shopify order.name field always does) - normalized to a
+    single '#' and quoted, since Shopify's search parser has been reported
+    to silently mismatch on bare `name:1234` without quotes."""
+    bare_number = str(order_number).strip().lstrip('#')
+    search_query = f"name:'#{bare_number}'"
+    data = shopify_graphql(ORDER_LOOKUP_QUERY, {'q': search_query})
     edges = data['orders']['edges']
     if not edges:
         return None, None, None, None
     node = edges[0]['node']
+    # Belt-and-suspenders: confirm the match is exact, not a partial/fuzzy
+    # hit from Shopify's search, before trusting it.
+    if node['name'].lstrip('#') != bare_number:
+        return None, None, None, None
     lines = []
     for edge in node['lineItems']['edges']:
         li = edge['node']
