@@ -26,6 +26,12 @@
     },
     "api/picking-list.py": {
       "maxDuration": 60
+    },
+    "api/get-order-check.py": {
+      "maxDuration": 30
+    },
+    "api/lookup-barcode.py": {
+      "maxDuration": 30
     }
   }
 }

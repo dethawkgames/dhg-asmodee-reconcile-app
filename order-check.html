@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Check — Detective Hawk Games</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Days+One&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --plum-dark: #38112F;
+    --plum: #58144B;
+    --coral: #EF3F45;
+    --coral-deep: #B12B2B;
+    --teal: #3BC0C6;
+    --teal-deep: #059B9C;
+    --gold: #FFD344;
+    --cream: #E2D4C3;
+    --paper: #FBF8F3;
+    --ink: #2A1622;
+    --ink-soft: #6b5a63;
+
+    --status-ok: #2f7a4f;
+    --status-warn: #b8762a;
+    --status-error: var(--coral-deep);
+
+    --mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .masthead {
+    background: linear-gradient(165deg, var(--plum-dark) 0%, var(--plum) 100%);
+    color: var(--cream);
+    padding: 36px 24px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .masthead::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 46px;
+    background-image: linear-gradient(transparent, transparent),
+      repeating-linear-gradient(90deg, rgba(255,211,68,0.10) 0 2px, transparent 2px 38px);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .masthead-inner {
+    max-width: 620px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+  h1.title {
+    font-family: 'Days One', -apple-system, sans-serif;
+    font-size: 28px;
+    line-height: 1.15;
+    margin: 0;
+    color: var(--cream);
+    letter-spacing: 0.01em;
+  }
+  .back-link {
+    color: rgba(226,212,195,0.85);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 6px 0;
+  }
+  .back-link:hover { color: var(--gold); }
+
+  .page {
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 28px 24px 64px;
+  }
+
+  .card {
+    background: var(--paper);
+    border-radius: 14px;
+    padding: 28px;
+    box-shadow: 0 1px 2px rgba(56,17,47,0.06), 0 8px 24px rgba(56,17,47,0.07);
+    border: 1px solid rgba(56,17,47,0.06);
+  }
+
+  .hint { color: var(--ink-soft); font-size: 13px; margin: -6px 0 20px; }
+
+  .lookup-row { display: flex; gap: 10px; margin-bottom: 4px; }
+
+  input[type="text"] {
+    flex: 1;
+    background: var(--cream);
+    border: 1.5px solid rgba(56,17,47,0.18);
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 16px;
+    padding: 13px 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type="text"]:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(59,192,198,0.16);
+  }
+
+  button {
+    background: var(--coral);
+    color: white;
+    border: none;
+    padding: 0 22px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.12s, transform 0.05s;
+  }
+  button:hover:not(:disabled) { background: var(--coral-deep); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+
+  #scan-panel { display: none; }
+
+  .order-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  h2.section-title {
+    font-family: 'Days One', -apple-system, sans-serif;
+    font-size: 19px;
+    margin: 0;
+    color: var(--plum-dark);
+  }
+  .order-header .num {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .fulfillment-note {
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin: 0 0 18px;
+  }
+
+  .mismatch-banner {
+    display: none;
+    background: rgba(184,118,42,0.10);
+    border-left: 3px solid var(--status-warn);
+    color: var(--status-warn);
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+
+  .scan-input-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+
+  #scan-input {
+    width: 100%;
+    font-size: 19px;
+    padding: 16px 14px;
+    margin-bottom: 22px;
+    letter-spacing: 0.03em;
+  }
+  #scan-input.flash-ok { border-color: var(--status-ok); box-shadow: 0 0 0 3px rgba(47,122,79,0.16); }
+  #scan-input.flash-bad { border-color: var(--status-error); box-shadow: 0 0 0 3px rgba(177,43,43,0.16); }
+
+  .line {
+    background: var(--cream);
+    border: 1.5px solid rgba(56,17,47,0.12);
+    border-radius: 10px;
+    padding: 15px 17px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .line.partial { border-color: var(--status-warn); }
+  .line.complete { border-color: var(--status-ok); background: rgba(47,122,79,0.06); }
+  .line.flagged { border-left: 4px solid var(--status-error); }
+
+  .line-info { min-width: 0; }
+  .line-title { font-weight: 600; font-size: 14.5px; margin-bottom: 3px; }
+  .line-sku { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+  .line-flag-note { font-family: var(--mono); font-size: 11px; color: var(--status-error); margin-top: 4px; }
+
+  .tally {
+    font-family: var(--mono);
+    font-size: 15px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .boxes { letter-spacing: 3px; }
+  .box-filled { color: var(--status-ok); }
+  .box-empty { color: rgba(56,17,47,0.18); }
+  .count-text { color: var(--ink-soft); font-size: 12.5px; }
+
+  #verified-banner {
+    display: none;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--status-ok);
+    border-left: 3px solid var(--status-ok);
+    background: rgba(47,122,79,0.08);
+    border-radius: 0 8px 8px 0;
+    padding: 14px;
+    margin-top: 6px;
+  }
+
+  .error-msg {
+    color: white;
+    background: var(--coral-deep);
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .reset-link {
+    display: inline-block;
+    margin-top: 22px;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .reset-link:hover { color: var(--coral); }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <div>
+      <p class="eyebrow">Detective Hawk Games · Internal Tool</p>
+      <h1 class="title">Order Check</h1>
+    </div>
+    <a href="index.html" class="back-link">← Fulfillment Tracker</a>
+  </div>
+</div>
+
+<div class="page">
+  <div class="card">
+
+    <div id="lookup-panel">
+      <p class="scan-input-label">Order Number</p>
+      <div class="lookup-row">
+        <input type="text" id="order-input" placeholder="e.g. 5555" autofocus>
+        <button id="lookup-btn">Pull Order</button>
+      </div>
+      <p class="hint">Type or scan the order barcode, then press Enter.</p>
+      <div class="error-msg" id="lookup-error"></div>
+    </div>
+
+    <div id="scan-panel">
+      <div class="order-header">
+        <h2 class="section-title" id="order-num"></h2>
+        <span class="num" id="order-status"></span>
+      </div>
+      <p class="fulfillment-note">Read-only check against Shopify and the Order Needs tab — nothing here writes anything back.</p>
+
+      <div class="mismatch-banner" id="mismatch-banner">
+        ⚠ Shopify and Order Needs disagree on quantity for one or more lines — check flagged items before treating this order as fully picked.
+      </div>
+
+      <p class="scan-input-label">Scan Next Item</p>
+      <input type="text" id="scan-input" placeholder="Waiting for scan…" autocomplete="off">
+      <div class="error-msg" id="scan-error"></div>
+
+      <div id="lines"></div>
+
+      <div id="verified-banner">✓ ALL LINES VERIFIED</div>
+
+      <div class="reset-link" id="reset-link">← Check a different order</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let currentOrder = null;
+
+const orderInput = document.getElementById('order-input');
+const lookupBtn = document.getElementById('lookup-btn');
+const lookupError = document.getElementById('lookup-error');
+const lookupPanel = document.getElementById('lookup-panel');
+const scanPanel = document.getElementById('scan-panel');
+const scanInput = document.getElementById('scan-input');
+const scanError = document.getElementById('scan-error');
+const linesEl = document.getElementById('lines');
+const mismatchBanner = document.getElementById('mismatch-banner');
+const verifiedBanner = document.getElementById('verified-banner');
+const resetLink = document.getElementById('reset-link');
+
+async function pullOrder() {
+  const orderNumber = orderInput.value.trim();
+  if (!orderNumber) return;
+  lookupError.style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/get-order-check?order_number=${encodeURIComponent(orderNumber)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      lookupError.textContent = data.error || 'Order not found.';
+      lookupError.style.display = 'block';
+      return;
+    }
+    currentOrder = {
+      order_number: data.order_number,
+      cancelled: data.cancelled,
+      fulfillment_status: data.fulfillment_status,
+      lines: data.lines.map(l => ({ ...l, scanned: 0 })),
+      has_mismatch: data.has_mismatch,
+    };
+    renderOrder();
+    lookupPanel.style.display = 'none';
+    scanPanel.style.display = 'block';
+    scanInput.value = '';
+    scanInput.focus();
+  } catch (e) {
+    lookupError.textContent = 'Could not reach the server.';
+    lookupError.style.display = 'block';
+  }
+}
+
+function renderOrder() {
+  document.getElementById('order-num').textContent = `Order ${currentOrder.order_number}`;
+  document.getElementById('order-status').textContent = currentOrder.cancelled
+    ? 'Cancelled'
+    : (currentOrder.fulfillment_status || '').replace(/_/g, ' ');
+  mismatchBanner.style.display = currentOrder.has_mismatch ? 'block' : 'none';
+
+  linesEl.innerHTML = '';
+  currentOrder.lines.forEach(line => {
+    const div = document.createElement('div');
+    const isComplete = line.scanned >= line.expected_qty;
+    const isPartial = line.scanned > 0 && !isComplete;
+    div.className = 'line' + (isComplete ? ' complete' : isPartial ? ' partial' : '') + (line.mismatch ? ' flagged' : '');
+
+    const boxes = Array.from({ length: line.expected_qty }, (_, i) =>
+      i < line.scanned ? '<span class="box-filled">■</span>' : '<span class="box-empty">□</span>'
+    ).join('');
+
+    div.innerHTML = `
+      <div class="line-info">
+        <div class="line-title">${line.title}</div>
+        <div class="line-sku">${line.sku}</div>
+        ${line.mismatch ? `<div class="line-flag-note">Shopify: ${line.shopify_qty} &nbsp;|&nbsp; Order Needs: ${line.order_needs_qty}</div>` : ''}
+      </div>
+      <div class="tally">
+        <span class="boxes">${boxes}</span>
+        <span class="count-text">${line.scanned}/${line.expected_qty}</span>
+      </div>
+    `;
+    linesEl.appendChild(div);
+  });
+
+  const allComplete = currentOrder.lines.length > 0 && currentOrder.lines.every(l => l.scanned >= l.expected_qty);
+  verifiedBanner.style.display = allComplete ? 'block' : 'none';
+}
+
+async function handleScan() {
+  const upc = scanInput.value.trim();
+  scanInput.value = '';
+  if (!upc || !currentOrder) return;
+  scanError.style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/lookup-barcode?upc=${encodeURIComponent(upc)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      flashInput('bad');
+      scanError.textContent = data.error || `Unrecognized barcode: ${upc}`;
+      scanError.style.display = 'block';
+      return;
+    }
+
+    const line = currentOrder.lines.find(l => l.sku === data.sku);
+    if (!line) {
+      flashInput('bad');
+      scanError.textContent = `${data.title} (${data.sku}) is not on this order.`;
+      scanError.style.display = 'block';
+      return;
+    }
+    if (line.scanned >= line.expected_qty) {
+      flashInput('bad');
+      scanError.textContent = `${data.title} is already fully scanned for this order.`;
+      scanError.style.display = 'block';
+      return;
+    }
+
+    line.scanned += 1;
+    flashInput('ok');
+    renderOrder();
+  } catch (e) {
+    flashInput('bad');
+    scanError.textContent = 'Could not reach the server.';
+    scanError.style.display = 'block';
+  }
+}
+
+function flashInput(kind) {
+  scanInput.classList.remove('flash-ok', 'flash-bad');
+  void scanInput.offsetWidth;
+  scanInput.classList.add(kind === 'ok' ? 'flash-ok' : 'flash-bad');
+  setTimeout(() => scanInput.classList.remove('flash-ok', 'flash-bad'), 350);
+}
+
+function reset() {
+  currentOrder = null;
+  lookupPanel.style.display = 'block';
+  scanPanel.style.display = 'none';
+  orderInput.value = '';
+  lookupError.style.display = 'none';
+  orderInput.focus();
+}
+
+lookupBtn.addEventListener('click', pullOrder);
+orderInput.addEventListener('keydown', e => { if (e.key === 'Enter') pullOrder(); });
+scanInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleScan(); });
+resetLink.addEventListener('click', reset);
+
+document.addEventListener('click', () => {
+  if (scanPanel.style.display === 'block') scanInput.focus();
+});
+</script>
+</body>
+</html>
