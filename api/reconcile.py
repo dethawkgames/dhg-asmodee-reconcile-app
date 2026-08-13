@@ -38,11 +38,98 @@ GTIN_X_MAX = 260
 QTY_X_MIN = 320
 QTY_X_MAX = 345
 
+# ── PDF parsing (Sales Quote format - no GTIN/barcode column at all, so it
+# cannot be detected the same way as the invoice. Columns verified 8/13/26
+# against a real Sales Quote PDF: No. (SKU) ~43.2, Description ~101.6,
+# MSRP ~360, Quantity ~420, Unit ~440 (always "Each"), Unit Price ~483,
+# Line Amount ~555. SKU/description wrap onto their own continuation line
+# the same way the invoice does. ──────────────────────────────────────────
+
+QUOTE_SKU_X = 43.2
+QUOTE_DESC_X_MIN = 95
+QUOTE_DESC_X_MAX = 350
+
+def parse_asmodee_sales_quote(file_bytes):
+    """Parses the Asmodee Sales Quote format (pre-shipment document, no
+    GTIN column). Normally this only informs the Lock stage / Latest
+    Reconciliation tab for reference - the Sales Invoice is what should
+    drive Shipped. Iain can choose to run a Sales Quote through the same
+    Shipped-advancing flow when he has independent proof of shipment
+    (e.g. a UPS notice) and the invoice hasn't arrived yet."""
+    line_items = []
+    hit_total = False
+    header_seen = False
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            if hit_total:
+                break
+            words = page.extract_words()
+            lines = {}
+            for w in words:
+                top_key = round(w['top'])
+                lines.setdefault(top_key, []).append(w)
+            sorted_tops = sorted(lines.keys())
+            current_item = None
+            for top in sorted_tops:
+                row_words = sorted(lines[top], key=lambda w: w['x0'])
+                row_text = ' '.join(w['text'] for w in row_words)
+                stripped = row_text.strip()
+                if stripped.startswith('Total') and '$' in stripped:
+                    hit_total = True
+                    break
+                if stripped.startswith('No.') and 'Description' in stripped:
+                    header_seen = True
+                    continue
+                if not header_seen:
+                    continue
+                if stripped.startswith('Home Page') or stripped.startswith('www.') or 'customerservice@' in stripped:
+                    continue
+                unit_word = next((w for w in row_words if w['text'] == 'Each'), None)
+                sku_word = next((w for w in row_words if abs(w['x0'] - QUOTE_SKU_X) < 2), None)
+                if unit_word and sku_word:
+                    qty_candidates = [w for w in row_words
+                                       if w['x1'] <= unit_word['x0'] and w['x0'] > 390
+                                       and w['text'].replace('.', '', 1).isdigit()]
+                    qty_word = qty_candidates[-1] if qty_candidates else None
+                    if current_item:
+                        line_items.append(current_item)
+                    desc_words = [w['text'] for w in row_words
+                                  if w is not sku_word and QUOTE_DESC_X_MIN <= w['x0'] < QUOTE_DESC_X_MAX]
+                    qty_val = qty_word['text'] if qty_word else None
+                    current_item = {
+                        'sku': sku_word['text'],
+                        'description': ' '.join(desc_words),
+                        'quantity': int(qty_val) if qty_val and qty_val.isdigit() else qty_val,
+                    }
+                elif current_item is not None:
+                    other_words = [w for w in row_words if w is not sku_word]
+                    if sku_word and not other_words:
+                        frag = sku_word['text']
+                        if len(frag) <= 12:
+                            current_item['sku'] = current_item['sku'] + frag
+                    else:
+                        desc_words = [w['text'] for w in row_words
+                                      if QUOTE_DESC_X_MIN <= w['x0'] < QUOTE_DESC_X_MAX]
+                        if desc_words:
+                            current_item['description'] = (current_item['description'] + ' ' + ' '.join(desc_words)).strip()
+            if current_item:
+                line_items.append(current_item)
+    return line_items
+
+def _is_sales_quote_pdf(file_bytes):
+    """Detect Sales Quote vs Sales Invoice from the document title on page 1."""
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        text = (pdf.pages[0].extract_text() or '')[:200]
+    return 'Sales Quote' in text
+
 def parse_asmodee_quote(file_bytes):
     """Despite the name (kept for compatibility with the rest of this file),
-    this parses the Asmodee INVOICE format - the shipment-confirmation
-    document, not the pre-shipment Sales Quote. Column positions differ
-    significantly between the two document types."""
+    this parses the Asmodee INVOICE format by default - the shipment-
+    confirmation document. Auto-detects and dispatches to the Sales Quote
+    parser when a Quote PDF is uploaded instead (see parse_asmodee_sales_quote
+    for why that's sometimes intentional)."""
+    if _is_sales_quote_pdf(file_bytes):
+        return parse_asmodee_sales_quote(file_bytes)
     line_items = []
     hit_subtotal = False
     header_seen = False  # persists across pages - the header row only appears once
@@ -310,7 +397,7 @@ def apply_received_inventory(sku_qty_map, reference_doc_uri):
 
 # ── Cancellation / refund safety check (same logic as lock-supplier-order.py) ─
 
-def reconcile_against_shopify(rows, touched_order_names):
+def reconcile_against_shopify(rows, touched_order_names, dry_run=False):
     if not touched_order_names:
         return rows, set()
     name_query = '(' + ' OR '.join(f'name:{n.lstrip("#")}' for n in touched_order_names) + ')'
@@ -362,7 +449,7 @@ def reconcile_against_shopify(rows, touched_order_names):
                 f'unit(s) need manual reconciliation (cancellation/refund detected)',
                 today,
             ])
-    if manual_review_flags:
+    if manual_review_flags and not dry_run:
         sheets_append(AGG_SHEET_ID, "'Needs Manual Review'!A2:F1000", manual_review_flags)
     cleaned_rows = [r for i, r in enumerate(rows) if i not in to_delete]
     return cleaned_rows, blocked_pairs
@@ -518,6 +605,9 @@ class handler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': 'No file field found in upload'})
                 return
 
+            dry_run_field = fs.getvalue('dry_run', 'false') if 'dry_run' in fs else 'false'
+            dry_run = str(dry_run_field).strip().lower() in ('1', 'true', 'on', 'yes')
+
             file_bytes = fs['file'].file.read()
             quote_items = parse_asmodee_quote(file_bytes)
 
@@ -533,7 +623,10 @@ class handler(BaseHTTPRequestHandler):
                 if sku and isinstance(qty, int):
                     received_sku_qty[sku] = received_sku_qty.get(sku, 0) + qty
             invoice_ref = f'gid://dhg-asmodee-reconcile-app/AsmodeeInvoice/{time.strftime("%Y-%m-%d")}'
-            inventory_result = apply_received_inventory(received_sku_qty, invoice_ref)
+            if dry_run:
+                inventory_result = {'dryRun': True, 'wouldPostSkuQty': received_sku_qty}
+            else:
+                inventory_result = apply_received_inventory(received_sku_qty, invoice_ref)
 
             order_needs_rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
 
@@ -542,7 +635,7 @@ class handler(BaseHTTPRequestHandler):
                 row[0] for row in order_needs_rows
                 if row and row[0] and len(row) >= 7 and row[3] == SUPPLIER and row[6] == 'Ordered'
             })
-            order_needs_rows, blocked_pairs = reconcile_against_shopify(order_needs_rows, candidate_order_names)
+            order_needs_rows, blocked_pairs = reconcile_against_shopify(order_needs_rows, candidate_order_names, dry_run=dry_run)
 
             submitted = load_submitted_from_order_needs(order_needs_rows, blocked_pairs)
             new_results = run_comparison(submitted, quote_items)
@@ -550,9 +643,10 @@ class handler(BaseHTTPRequestHandler):
             # Advance Order Needs, write it back (clear first - the safety
             # check above may have shrunk the row count)
             updated_rows, touched_orders, advanced_count = advance_shipped_stage(order_needs_rows, new_results, blocked_pairs)
-            sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
-            if updated_rows:
-                sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(updated_rows) + 1}", updated_rows)
+            if not dry_run:
+                sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+                if updated_rows:
+                    sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(updated_rows) + 1}", updated_rows)
 
             # Apply dhg-shipped-from-supplier to any touched order whose
             # EVERY needed unit (across every supplier) is now Shipped-or-beyond
@@ -562,10 +656,14 @@ class handler(BaseHTTPRequestHandler):
                 if row and row[0]:
                     rows_by_order.setdefault(row[0], []).append(row)
             tagged, tag_errors, skipped_inventory_queued = [], [], []
+            would_tag = []
             for order_name in touched_orders:
                 order_rows = rows_by_order.get(order_name, [])
                 fully_shipped = all(STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped') for r in order_rows)
                 if not fully_shipped:
+                    continue
+                if dry_run:
+                    would_tag.append(order_name)
                     continue
                 try:
                     order_id, current_status = get_order_id_and_current_status(order_name)
@@ -583,22 +681,25 @@ class handler(BaseHTTPRequestHandler):
                     tag_errors.append({'order': order_name, 'error': str(e)})
 
             # Update the audit/display tab
-            ensure_reconcile_tab_exists()
-            existing = load_existing_reconciliation()
-            merged_results = merge_results(existing, new_results)
-            header = [['Shopify SKU', 'Title', 'Ordered Qty', 'Quoted Qty', 'Status', 'Order Names']]
-            sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1000")
-            sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1", header)
-            if merged_results:
-                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F{len(merged_results)+1}", merged_results)
+            if not dry_run:
+                ensure_reconcile_tab_exists()
+                existing = load_existing_reconciliation()
+                merged_results = merge_results(existing, new_results)
+                header = [['Shopify SKU', 'Title', 'Ordered Qty', 'Quoted Qty', 'Status', 'Order Names']]
+                sheets_clear(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1000")
+                sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A1:F1", header)
+                if merged_results:
+                    sheets_put(AGG_SHEET_ID, f"'{RECONCILE_TAB}'!A2:F{len(merged_results)+1}", merged_results)
 
             self._send_json(200, {
                 'success': True,
+                'dryRun': dry_run,
                 'itemsInQuote': len(quote_items),
                 'inventoryReceived': inventory_result,
                 'skusCompared': len(new_results),
                 'unitsAdvancedToShipped': advanced_count,
                 'ordersFullyShippedAndTagged': tagged,
+                'ordersThatWouldBeTagged': would_tag,
                 'skippedAlreadyInventoryQueued': skipped_inventory_queued,
                 'tagErrors': tag_errors,
                 'results': new_results,
