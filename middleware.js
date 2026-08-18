@@ -110,12 +110,13 @@ export default async function middleware(request) {
 
     if (password === sitePassword) {
       const cookieValue = await makeCookieValue(secret);
-      const res = Response.redirect(new URL(next, url.origin), 302);
-      res.headers.append(
+      const headers = new Headers();
+      headers.set('Location', new URL(next, url.origin).toString());
+      headers.append(
         'Set-Cookie',
         `${COOKIE_NAME}=${cookieValue}; Path=/; Max-Age=${MAX_AGE_SECONDS}; HttpOnly; Secure; SameSite=Lax`
       );
-      return res;
+      return new Response(null, { status: 302, headers });
     }
 
     return new Response(loginPageHtml(true, next), {
