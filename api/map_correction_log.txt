@@ -1,0 +1,227 @@
+[PRICE] SWQ152 -> 39.99: OK
+[PRICE] CGE00131 -> 24.99: OK
+[PRICE] CGE00134 -> 29.99: OK
+[PRICE] CGE00140 -> 9.99: OK
+[PRICE] CGE00142 -> 9.99: OK
+[PRICE] CGE00144 -> 9.99: OK
+[PRICE] GGS40158ML -> 32.99: OK
+[PRICE] HIGPAL08EN -> 29.99: OK
+[PRICE] LOG0193 -> 11.99: OK
+[PRICE] LDNV500001 -> 40.00: OK
+[PRICE] PANCNCORE -> 19.99: OK
+[PRICE] POD-2RN-EN -> 99.99: OK
+[PRICE] PSG204 -> 50.00: OK
+[PRICE] RMA120 -> 40.00: OK
+[PRICE] RMA121 -> 30.00: OK
+[PRICE] RMA122 -> 30.00: OK
+[PRICE] SK1061 -> 20.00: OK
+[PRICE] SK1062 -> 20.00: OK
+[PRICE] STG2110EN -> 45.00: OK
+[PRICE] STG2111EN -> 45.00: OK
+[PRICE] STG3201EN -> 100.00: OK
+[PRICE] STG3205EN -> 45.00: OK
+[PRICE] TYC4080EN -> 39.99: OK
+[PRICE] SWQ10 -> 47.99: OK
+[PRICE] SWQ102 -> 35.99: OK
+[PRICE] SWQ15 -> 43.99: OK
+[PRICE] SWQ17 -> 31.99: OK
+[PRICE] SWQ73 -> 39.99: OK
+[PRICE] FS5501 -> 47.99: OK
+[PRICE] CN3081 -> 39.99: OK
+[PRICE] CN3082 -> 19.99: OK
+[PRICE] CN3282 -> 11.99: OK
+[PRICE] HOTSTREAK00 -> 39.99: OK
+[PRICE] MONFE00 -> 26.99: OK
+[PRICE] WAV01 -> 34.99: OK
+[PRICE] ESDPSAH04EN -> 47.99: OK
+[PRICE] AHC100EN -> 55.99: OK
+[PRICE] SWG01EN -> 30.39: OK
+[PRICE] SWG02EN -> 30.39: OK
+[PRICE] ZM7810 -> 31.99: OK
+[PRICE] PAN202202 -> 4.00: OK
+[PRICE] PANBTPHH -> 20.00: OK
+[PRICE] PANDNCORE -> 8.00: OK
+[PRICE] PANGATSCORE -> 23.96: OK
+[PRICE] PANREFUCORE -> 23.96: OK
+[PRICE] PANRIVAGCORE -> 19.96: OK
+[PRICE] PANSSAPCORE -> 14.36: OK
+[PRICE] PANSSAPEXP02 -> 7.96: OK
+[PRICE] NM6010 -> 31.99: OK
+[PRICE] REGAR0101EN -> 39.99: OK
+[PRICE] TOY-EN01 -> 26.39: OK
+[PRICE] UGCSV0101EN -> 31.99: OK
+[PRICE] MIB01NR -> 12.79: OK
+[TAG ADD] CA23 +['speakeasy']: OK
+[TAG ADD] SWQ133 +['speakeasy']: OK
+[TAG ADD] SWQ97 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CGE00131 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CGE00140 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CGE00142 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CGE00144 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] DWD01020 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] DWD02013 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] DWD02018 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] DWD04000 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] DWD07000 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] DWD10000 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] GGS40158ML +['speakeasy', 'mapp rules']: OK
+[TAG ADD] HIGPAL08EN +['speakeasy', 'mapp rules']: OK
+[TAG ADD] LOG0193 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] LDNV500001 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] PANCNCORE +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CANVAS01 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CANVAS04 +['speakeasy', 'mapp rules']: OK
+[TAG ADD] CANVASFTR +['speakeasy', 'mapp rules']: OK
+[TAG ADD] FLY2041EN +['speakeasy', 'mapp rules']: OK
+[TAG ADD] GLGTETMP +['speakeasy', 'mapp rules']: OK
+[TAG ADD] PSG202 +['mapp rules']: OK
+[TAG ADD] PSG203 +['mapp rules']: OK
+[TAG ADD] PSG601 +['mapp rules']: OK
+[TAG ADD] PSG602 +['mapp rules']: OK
+[TAG ADD] RMA207 +['speakeasy']: OK
+[TAG ADD] SPK2032EN +['mapp rules']: OK
+[TAG ADD] ST1030 +['mapp rules']: OK
+[TAG ADD] STG2610EN +['speakeasy']: OK
+[TAG ADD] STG2618EN +['mapp rules']: OK
+[TAG ADD] STG3102EN +['mapp rules']: OK
+[TAG ADD] STG3400EN +['speakeasy']: OK
+[TAG REMOVE] CP224 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CP226 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CP236 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CP94 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ01 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ02 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ10 -['mapp rules']: OK
+[TAG REMOVE] SWQ102 -['mapp rules']: OK
+[TAG REMOVE] SWQ11 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ12 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ138 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ139 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ142 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ15 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ151 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ16 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ17 -['mapp rules']: OK
+[TAG REMOVE] SWQ18 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ198 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ199 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ20 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ21 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ22 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ23 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ24 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ27 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ28 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ29 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ30 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ31 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ32 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ35 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ36 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ37 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ38 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ41 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ42 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ45 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ52 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ53 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ58 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ61 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ63 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ72 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ73 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ89 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWQ92 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GC-ENG-CBN-K -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CAPGMAMAM1 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3081 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3082 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3083 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3084 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3085 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3086 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3087 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3088 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3089 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3090 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3105 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3143 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3281 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3282 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CN3283 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CLT001 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] QUACKSREV -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] QUACKSREV-ALL -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] QUACKSREV-DEL -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOW720037 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOW7201N -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOW7301N -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOW9103 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOW9104 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOWSWB0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOT10000 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] DOTGM2-01-01EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ESDAK01EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ESDAK02EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ESDPSAH04EN -['mapp rules']: OK
+[TAG REMOVE] AHC100EN -['mapp rules']: OK
+[TAG REMOVE] AHC101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] AHC102EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] AHC103EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] AHC104EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] AHC105EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] AHC84EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] AHC85EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC51EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC52EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC53EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC54EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC55EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC57EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] MC58EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SWG03EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GGS20249ML -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GGS40167ML -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GGS40168ML -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GGS60178ML -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GGS60191ML -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] HIGCARC06EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] HIGCARC11EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] HIGCARCBB0102EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] HIGSTN0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] LIBMYST2501EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ESG50190EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] LOG007502EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] LOG0156 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] LDNV540001 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] PAN201821 -['speakeasy']: OK
+[TAG REMOVE] PAN201905 -['speakeasy']: OK
+[TAG REMOVE] PAN202113 -['speakeasy']: OK
+[TAG REMOVE] PANFINCACORE -['speakeasy']: OK
+[TAG REMOVE] PANGATSCORE -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] PANKNARRCORE -['speakeasy']: OK
+[TAG REMOVE] PANMUCORE -['speakeasy']: OK
+[TAG REMOVE] PANPIXIECORE -['speakeasy']: OK
+[TAG REMOVE] PANREFUCORE -['speakeasy']: OK
+[TAG REMOVE] PANRIVAGCORE -['speakeasy']: OK
+[TAG REMOVE] PANSHACKEXP01 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] PANSSAPCORE -['speakeasy']: OK
+[TAG REMOVE] PANSSAPEXP02 -['speakeasy']: OK
+[TAG REMOVE] NMG60160EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] NMG60200EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] TFEVE01 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] REGAR0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] TOY-EN01 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SCRVL0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SCSPL03EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] SCSPL04EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] CHI-FSB-001-007 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] GRL-FEY-001-645 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] KOL-INI-001-477 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] UGCSV0101EN -['mapp rules']: OK
+[TAG REMOVE] ZMGLLF0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ZMGLLS0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ZMGPSM0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ZYGDOBGI0201ML1 -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ZYGTIM0101EN -['speakeasy', 'mapp rules']: OK
+[TAG REMOVE] ZYGTIM0201EN -['speakeasy', 'mapp rules']: OK
