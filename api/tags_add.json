@@ -1,0 +1,261 @@
+[
+  {
+    "productId": "gid://shopify/Product/10174886215993",
+    "tags": [
+      "speakeasy"
+    ],
+    "sku": "CA23"
+  },
+  {
+    "productId": "gid://shopify/Product/10043398226233",
+    "tags": [
+      "speakeasy"
+    ],
+    "sku": "SWQ133"
+  },
+  {
+    "productId": "gid://shopify/Product/8153674875193",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "SWQ97"
+  },
+  {
+    "productId": "gid://shopify/Product/10211965862201",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CGE00131"
+  },
+  {
+    "productId": "gid://shopify/Product/10254411006265",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CGE00140"
+  },
+  {
+    "productId": "gid://shopify/Product/10254410973497",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CGE00142"
+  },
+  {
+    "productId": "gid://shopify/Product/10254410940729",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CGE00144"
+  },
+  {
+    "productId": "gid://shopify/Product/9975738958137",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "DWD01020"
+  },
+  {
+    "productId": "gid://shopify/Product/10211967828281",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "DWD02013"
+  },
+  {
+    "productId": "gid://shopify/Product/10211967795513",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "DWD02018"
+  },
+  {
+    "productId": "gid://shopify/Product/8414899110201",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "DWD04000"
+  },
+  {
+    "productId": "gid://shopify/Product/9167240986937",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "DWD07000"
+  },
+  {
+    "productId": "gid://shopify/Product/10029533200697",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "DWD10000"
+  },
+  {
+    "productId": "gid://shopify/Product/10168446386489",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "GGS40158ML"
+  },
+  {
+    "productId": "gid://shopify/Product/10278802489657",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "HIGPAL08EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10306079555897",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "LOG0193"
+  },
+  {
+    "productId": "gid://shopify/Product/10306079588665",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "LDNV500001"
+  },
+  {
+    "productId": "gid://shopify/Product/9612398330169",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "PANCNCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/8042901602617",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CANVAS01"
+  },
+  {
+    "productId": "gid://shopify/Product/9147145716025",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CANVAS04"
+  },
+  {
+    "productId": "gid://shopify/Product/9147139522873",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "CANVASFTR"
+  },
+  {
+    "productId": "gid://shopify/Product/9815908548921",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "FLY2041EN"
+  },
+  {
+    "productId": "gid://shopify/Product/8417911669049",
+    "tags": [
+      "speakeasy",
+      "mapp rules"
+    ],
+    "sku": "GLGTETMP"
+  },
+  {
+    "productId": "gid://shopify/Product/9760585187641",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "PSG202"
+  },
+  {
+    "productId": "gid://shopify/Product/9760633323833",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "PSG203"
+  },
+  {
+    "productId": "gid://shopify/Product/9760622674233",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "PSG601"
+  },
+  {
+    "productId": "gid://shopify/Product/9760625262905",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "PSG602"
+  },
+  {
+    "productId": "gid://shopify/Product/9816818417977",
+    "tags": [
+      "speakeasy"
+    ],
+    "sku": "RMA207"
+  },
+  {
+    "productId": "gid://shopify/Product/9063266517305",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "SPK2032EN"
+  },
+  {
+    "productId": "gid://shopify/Product/8027045101881",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "ST1030"
+  },
+  {
+    "productId": "gid://shopify/Product/9919793856825",
+    "tags": [
+      "speakeasy"
+    ],
+    "sku": "STG2610EN"
+  },
+  {
+    "productId": "gid://shopify/Product/9689565167929",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "STG2618EN"
+  },
+  {
+    "productId": "gid://shopify/Product/9661714596153",
+    "tags": [
+      "mapp rules"
+    ],
+    "sku": "STG3102EN"
+  },
+  {
+    "productId": "gid://shopify/Product/9919798247737",
+    "tags": [
+      "speakeasy"
+    ],
+    "sku": "STG3400EN"
+  }
+]

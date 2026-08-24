@@ -1,0 +1,373 @@
+[
+  {
+    "productId": "gid://shopify/Product/10255345353017",
+    "variantId": "gid://shopify/ProductVariant/53638887539001",
+    "price": "39.99",
+    "compareAtPrice": "39.99",
+    "sku": "SWQ152"
+  },
+  {
+    "productId": "gid://shopify/Product/10211965862201",
+    "variantId": "gid://shopify/ProductVariant/53320173879609",
+    "price": "24.99",
+    "compareAtPrice": "24.99",
+    "sku": "CGE00131"
+  },
+  {
+    "productId": "gid://shopify/Product/10168494883129",
+    "variantId": "gid://shopify/ProductVariant/52086436987193",
+    "price": "29.99",
+    "compareAtPrice": "29.99",
+    "sku": "CGE00134"
+  },
+  {
+    "productId": "gid://shopify/Product/10254411006265",
+    "variantId": "gid://shopify/ProductVariant/53635126001977",
+    "price": "9.99",
+    "compareAtPrice": "9.99",
+    "sku": "CGE00140"
+  },
+  {
+    "productId": "gid://shopify/Product/10254410973497",
+    "variantId": "gid://shopify/ProductVariant/53635125969209",
+    "price": "9.99",
+    "compareAtPrice": "9.99",
+    "sku": "CGE00142"
+  },
+  {
+    "productId": "gid://shopify/Product/10254410940729",
+    "variantId": "gid://shopify/ProductVariant/53635125936441",
+    "price": "9.99",
+    "compareAtPrice": "9.99",
+    "sku": "CGE00144"
+  },
+  {
+    "productId": "gid://shopify/Product/10168446386489",
+    "variantId": "gid://shopify/ProductVariant/52086368239929",
+    "price": "32.99",
+    "compareAtPrice": "32.99",
+    "sku": "GGS40158ML"
+  },
+  {
+    "productId": "gid://shopify/Product/10278802489657",
+    "variantId": "gid://shopify/ProductVariant/54103071916345",
+    "price": "29.99",
+    "compareAtPrice": "29.99",
+    "sku": "HIGPAL08EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10306079555897",
+    "variantId": "gid://shopify/ProductVariant/54326606954809",
+    "price": "11.99",
+    "compareAtPrice": "11.99",
+    "sku": "LOG0193"
+  },
+  {
+    "productId": "gid://shopify/Product/10306079588665",
+    "variantId": "gid://shopify/ProductVariant/54326606987577",
+    "price": "40.00",
+    "compareAtPrice": "40.00",
+    "sku": "LDNV500001"
+  },
+  {
+    "productId": "gid://shopify/Product/9612398330169",
+    "variantId": "gid://shopify/ProductVariant/49780276068665",
+    "price": "19.99",
+    "compareAtPrice": "19.99",
+    "sku": "PANCNCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/10168434590009",
+    "variantId": "gid://shopify/ProductVariant/52086339174713",
+    "price": "99.99",
+    "compareAtPrice": "99.99",
+    "sku": "POD-2RN-EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10002176803129",
+    "variantId": "gid://shopify/ProductVariant/51221020082489",
+    "price": "50.00",
+    "compareAtPrice": "50.00",
+    "sku": "PSG204"
+  },
+  {
+    "productId": "gid://shopify/Product/9919803752761",
+    "variantId": "gid://shopify/ProductVariant/50976246366521",
+    "price": "40.00",
+    "compareAtPrice": "40.00",
+    "sku": "RMA120"
+  },
+  {
+    "productId": "gid://shopify/Product/9919804080441",
+    "variantId": "gid://shopify/ProductVariant/50976246694201",
+    "price": "30.00",
+    "compareAtPrice": "30.00",
+    "sku": "RMA121"
+  },
+  {
+    "productId": "gid://shopify/Product/9919805325625",
+    "variantId": "gid://shopify/ProductVariant/50976248267065",
+    "price": "30.00",
+    "compareAtPrice": "30.00",
+    "sku": "RMA122"
+  },
+  {
+    "productId": "gid://shopify/Product/8153711935801",
+    "variantId": "gid://shopify/ProductVariant/44559056208185",
+    "price": "20.00",
+    "compareAtPrice": "20.00",
+    "sku": "SK1061"
+  },
+  {
+    "productId": "gid://shopify/Product/8153711968569",
+    "variantId": "gid://shopify/ProductVariant/44559056240953",
+    "price": "20.00",
+    "compareAtPrice": "20.00",
+    "sku": "SK1062"
+  },
+  {
+    "productId": "gid://shopify/Product/9974729277753",
+    "variantId": "gid://shopify/ProductVariant/51138711060793",
+    "price": "45.00",
+    "compareAtPrice": "45.00",
+    "sku": "STG2110EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10002177556793",
+    "variantId": "gid://shopify/ProductVariant/51221023129913",
+    "price": "45.00",
+    "compareAtPrice": "45.00",
+    "sku": "STG2111EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10042503102777",
+    "variantId": "gid://shopify/ProductVariant/51355218903353",
+    "price": "100.00",
+    "compareAtPrice": "100.00",
+    "sku": "STG3201EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10042504446265",
+    "variantId": "gid://shopify/ProductVariant/51355221033273",
+    "price": "45.00",
+    "compareAtPrice": "45.00",
+    "sku": "STG3205EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10168500486457",
+    "variantId": "gid://shopify/ProductVariant/52086444425529",
+    "price": "39.99",
+    "compareAtPrice": "39.99",
+    "sku": "TYC4080EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10102330392889",
+    "variantId": "gid://shopify/ProductVariant/51712761332025",
+    "price": "47.99",
+    "compareAtPrice": "59.99",
+    "sku": "SWQ10"
+  },
+  {
+    "productId": "gid://shopify/Product/10043397701945",
+    "variantId": "gid://shopify/ProductVariant/51361940046137",
+    "price": "35.99",
+    "compareAtPrice": "44.99",
+    "sku": "SWQ102"
+  },
+  {
+    "productId": "gid://shopify/Product/8153670680889",
+    "variantId": "gid://shopify/ProductVariant/44558974878009",
+    "price": "43.99",
+    "compareAtPrice": "54.99",
+    "sku": "SWQ15"
+  },
+  {
+    "productId": "gid://shopify/Product/10075757314361",
+    "variantId": "gid://shopify/ProductVariant/51458642805049",
+    "price": "31.99",
+    "compareAtPrice": "39.99",
+    "sku": "SWQ17"
+  },
+  {
+    "productId": "gid://shopify/Product/10102341402937",
+    "variantId": "gid://shopify/ProductVariant/51712783778105",
+    "price": "39.99",
+    "compareAtPrice": "49.99",
+    "sku": "SWQ73"
+  },
+  {
+    "productId": "gid://shopify/Product/10215688831289",
+    "variantId": "gid://shopify/ProductVariant/53331493421369",
+    "price": "47.99",
+    "compareAtPrice": "59.99",
+    "sku": "FS5501"
+  },
+  {
+    "productId": "gid://shopify/Product/9815733010745",
+    "variantId": "gid://shopify/ProductVariant/50545069359417",
+    "price": "39.99",
+    "compareAtPrice": "49.99",
+    "sku": "CN3081"
+  },
+  {
+    "productId": "gid://shopify/Product/9815733666105",
+    "variantId": "gid://shopify/ProductVariant/50545076568377",
+    "price": "19.99",
+    "compareAtPrice": "24.99",
+    "sku": "CN3082"
+  },
+  {
+    "productId": "gid://shopify/Product/9815801889081",
+    "variantId": "gid://shopify/ProductVariant/50545298374969",
+    "price": "11.99",
+    "compareAtPrice": "14.99",
+    "sku": "CN3282"
+  },
+  {
+    "productId": "gid://shopify/Product/10043417952569",
+    "variantId": "gid://shopify/ProductVariant/51361985003833",
+    "price": "39.99",
+    "compareAtPrice": "44.99",
+    "sku": "HOTSTREAK00"
+  },
+  {
+    "productId": "gid://shopify/Product/10306078802233",
+    "variantId": "gid://shopify/ProductVariant/54326605807929",
+    "price": "26.99",
+    "compareAtPrice": "29.99",
+    "sku": "MONFE00"
+  },
+  {
+    "productId": "gid://shopify/Product/8042895802681",
+    "variantId": "gid://shopify/ProductVariant/44084314800441",
+    "price": "34.99",
+    "compareAtPrice": "38.99",
+    "sku": "WAV01"
+  },
+  {
+    "productId": "gid://shopify/Product/9930561093945",
+    "variantId": "gid://shopify/ProductVariant/51007353815353",
+    "price": "47.99",
+    "compareAtPrice": "59.99",
+    "sku": "ESDPSAH04EN"
+  },
+  {
+    "productId": "gid://shopify/Product/10043455963449",
+    "variantId": "gid://shopify/ProductVariant/51362109686073",
+    "price": "55.99",
+    "compareAtPrice": "69.99",
+    "sku": "AHC100EN"
+  },
+  {
+    "productId": "gid://shopify/Product/8042874011961",
+    "variantId": "gid://shopify/ProductVariant/44084259422521",
+    "price": "30.39",
+    "compareAtPrice": "37.99",
+    "sku": "SWG01EN"
+  },
+  {
+    "productId": "gid://shopify/Product/9577897460025",
+    "variantId": "gid://shopify/ProductVariant/49698251211065",
+    "price": "30.39",
+    "compareAtPrice": "37.99",
+    "sku": "SWG02EN"
+  },
+  {
+    "productId": "gid://shopify/Product/8026724467001",
+    "variantId": "gid://shopify/ProductVariant/44009749348665",
+    "price": "31.99",
+    "compareAtPrice": "39.99",
+    "sku": "ZM7810"
+  },
+  {
+    "productId": "gid://shopify/Product/8042897244473",
+    "variantId": "gid://shopify/ProductVariant/44084317421881",
+    "price": "4.00",
+    "compareAtPrice": "14.95",
+    "sku": "PAN202202"
+  },
+  {
+    "productId": "gid://shopify/Product/9661798449465",
+    "variantId": "gid://shopify/ProductVariant/49973535998265",
+    "price": "20.00",
+    "compareAtPrice": "29.95",
+    "sku": "PANBTPHH"
+  },
+  {
+    "productId": "gid://shopify/Product/8338648891705",
+    "variantId": "gid://shopify/ProductVariant/45323543314745",
+    "price": "8.00",
+    "compareAtPrice": "14.95",
+    "sku": "PANDNCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/9974749757753",
+    "variantId": "gid://shopify/ProductVariant/51138734031161",
+    "price": "23.96",
+    "compareAtPrice": "29.95",
+    "sku": "PANGATSCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/10025395650873",
+    "variantId": "gid://shopify/ProductVariant/51302611648825",
+    "price": "23.96",
+    "compareAtPrice": "29.95",
+    "sku": "PANREFUCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/9689568477497",
+    "variantId": "gid://shopify/ProductVariant/50087962280249",
+    "price": "19.96",
+    "compareAtPrice": "24.95",
+    "sku": "PANRIVAGCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/8628124746041",
+    "variantId": "gid://shopify/ProductVariant/46574014333241",
+    "price": "14.36",
+    "compareAtPrice": "17.95",
+    "sku": "PANSSAPCORE"
+  },
+  {
+    "productId": "gid://shopify/Product/10025396502841",
+    "variantId": "gid://shopify/ProductVariant/51302614466873",
+    "price": "7.96",
+    "compareAtPrice": "9.95",
+    "sku": "PANSSAPEXP02"
+  },
+  {
+    "productId": "gid://shopify/Product/8026859176249",
+    "variantId": "gid://shopify/ProductVariant/44010649223481",
+    "price": "31.99",
+    "compareAtPrice": "39.99",
+    "sku": "NM6010"
+  },
+  {
+    "productId": "gid://shopify/Product/9815896391993",
+    "variantId": "gid://shopify/ProductVariant/50545801462073",
+    "price": "39.99",
+    "compareAtPrice": "49.99",
+    "sku": "REGAR0101EN"
+  },
+  {
+    "productId": "gid://shopify/Product/9840679747897",
+    "variantId": "gid://shopify/ProductVariant/50639978430777",
+    "price": "26.39",
+    "compareAtPrice": "32.99",
+    "sku": "TOY-EN01"
+  },
+  {
+    "productId": "gid://shopify/Product/10043531723065",
+    "variantId": "gid://shopify/ProductVariant/51362356724025",
+    "price": "31.99",
+    "compareAtPrice": "39.99",
+    "sku": "UGCSV0101EN"
+  },
+  {
+    "productId": "gid://shopify/Product/8026726596921",
+    "variantId": "gid://shopify/ProductVariant/44009758720313",
+    "price": "12.79",
+    "compareAtPrice": "15.99",
+    "sku": "MIB01NR"
+  }
+]
