@@ -293,7 +293,10 @@ def mark_arrived(supplier):
     tagged, tag_errors, skipped_inventory_queued = [], [], []
     for order_name in touched_orders:
         order_rows = rows_by_order.get(order_name, [])
-        fully_arrived = all(STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Arrived') for r in order_rows)
+        fully_arrived = all(
+            r[6] == 'Fulfilled - Existing Stock' or STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Arrived')
+            for r in order_rows
+        )
         if not fully_arrived:
             continue
         order_id, current_status, fulfillment, cancelled_at, line_items = current_details.get(order_name, (None, None, None, None, []))

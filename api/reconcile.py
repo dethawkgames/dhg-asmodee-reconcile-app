@@ -659,7 +659,10 @@ class handler(BaseHTTPRequestHandler):
             would_tag = []
             for order_name in touched_orders:
                 order_rows = rows_by_order.get(order_name, [])
-                fully_shipped = all(STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped') for r in order_rows)
+                fully_shipped = all(
+                    r[6] == 'Fulfilled - Existing Stock' or STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped')
+                    for r in order_rows
+                )
                 if not fully_shipped:
                     continue
                 if dry_run:
