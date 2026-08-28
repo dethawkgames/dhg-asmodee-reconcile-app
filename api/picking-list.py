@@ -1,12 +1,15 @@
 import io
 import json
 import os
+import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler
 
+import jwt
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.lib import colors
@@ -51,6 +54,105 @@ def shopify_graphql(query, variables=None):
     if result.get('errors'):
         raise Exception(f"Shopify GraphQL errors: {result['errors']}")
     return result['data']
+
+
+# ── Order Needs readiness check (same sheet/auth pattern as mark-arrived.py,
+# read-only here - this endpoint never writes to the sheet) ─────────────────
+#
+# The Shopify tag/fulfillment status only tell us what Iain already decided
+# to do, not what's physically arrived. Two situations look identical from
+# Shopify's side but need different handling on a picking list:
+#   - a straggler line item still genuinely on backorder with no ETA
+#   - a preorder line item whose release date keeps slipping (e.g. Zoo Vadis)
+# Iain sometimes deliberately ships the rest of the order in both cases, so
+# this never blocks generating the PDF - it just flags the specific line
+# item so whoever's packing doesn't try to pull a unit that isn't there.
+
+AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
+ORDER_NEEDS_TAB = 'Order Needs'
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
+STAGE_ORDER = ['NotOrdered', 'Ordered', 'Shipped', 'Arrived']
+READY_STAGES = {'Fulfilled - Existing Stock', 'Arrived'}
+
+RELEASE_DATE_TAG_RE = re.compile(r'^release-date-(\d{4}-\d{2}-\d{2})$')
+HOLD_WINDOW_DAYS = 3  # same threshold mark-arrived.py uses for the order-level preorder hold tag
+
+def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets.readonly'):
+    sa_email = os.environ['GOOGLE_SA_EMAIL']
+    raw_key = os.environ.get('GOOGLE_SA_PRIVATE_KEY_B64') or os.environ.get('GOOGLE_SA_PRIVATE_KEY', '')
+    if os.environ.get('GOOGLE_SA_PRIVATE_KEY_B64'):
+        import base64
+        sa_key = base64.b64decode(raw_key).decode('utf-8')
+    else:
+        sa_key = raw_key.replace('\\n', '\n')
+    now = int(time.time())
+    payload = {'iss': sa_email, 'scope': scope, 'aud': 'https://oauth2.googleapis.com/token', 'exp': now + 3600, 'iat': now}
+    assertion = jwt.encode(payload, sa_key, algorithm='RS256')
+    data = urllib.parse.urlencode({'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion': assertion}).encode()
+    req = urllib.request.Request('https://oauth2.googleapis.com/token', data=data, method='POST')
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())['access_token']
+
+
+def sheets_get(spreadsheet_id, range_str):
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(range_str)}'
+    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read()).get('values', [])
+
+
+def load_order_needs_stages():
+    """(order_name, sku) -> worst (least-advanced) stage across all Order
+    Needs rows for that pair. If a straggler unit hasn't reached Arrived,
+    that pair reads as not-ready even if other units of the same SKU have."""
+    try:
+        rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+    except Exception:
+        return None  # Sheets unavailable - callers treat this as "can't verify", not "not ready"
+    stages = {}
+    for row in rows:
+        if not row or not row[0] or len(row) < 7:
+            continue
+        order_name, sku, stage = row[0], row[1], row[6]
+        key = (order_name, sku)
+        if key not in stages:
+            stages[key] = stage
+            continue
+        prev = stages[key]
+        prev_rank = STAGE_ORDER.index(prev) if prev in STAGE_ORDER else len(STAGE_ORDER)
+        this_rank = STAGE_ORDER.index(stage) if stage in STAGE_ORDER else len(STAGE_ORDER)
+        if this_rank < prev_rank:
+            stages[key] = stage
+    return stages
+
+
+def line_item_readiness(order_name, sku, product_tags, needs_stages):
+    """Returns (reason, detail) for a single owed line item - reason is
+    'backorder', 'preorder', or None (ready to pack). needs_stages=None
+    means the Order Needs sheet couldn't be read, so only the preorder
+    check (which doesn't depend on it) still runs."""
+    if needs_stages is not None and sku:
+        stage = needs_stages.get((order_name, sku))
+        if stage is not None and stage not in READY_STAGES:
+            return 'backorder', None
+
+    tags_lower = [t.lower() for t in (product_tags or [])]
+    if 'preorder' in tags_lower:
+        latest_release = None
+        for t in product_tags:
+            m = RELEASE_DATE_TAG_RE.match(t.strip())
+            if m:
+                try:
+                    d = datetime.strptime(m.group(1), '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                    if latest_release is None or d > latest_release:
+                        latest_release = d
+                except ValueError:
+                    continue
+        if latest_release and latest_release - datetime.now(timezone.utc) > timedelta(days=HOLD_WINDOW_DAYS):
+            return 'preorder', latest_release
+
+    return None, None
 
 
 # ── First-shipment check (same definition used for thank-you cards) ────────
@@ -129,7 +231,13 @@ query PickableOrders($first: Int!, $searchQuery: String!, $cursor: String) {
         customer { firstName lastName }
         shippingAddress { name city provinceCode }
         lineItems(first: 250) {
-          edges { node { currentQuantity } }
+          edges {
+            node {
+              sku
+              currentQuantity
+              product { tags }
+            }
+          }
         }
       }
     }
@@ -177,6 +285,10 @@ def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None, read
         page_size = max(1, min(int(limit), DEFAULT_ORDER_LIMIT))
         fetch_cap = page_size
 
+    # Only pull the Order Needs sheet when it's actually needed - the
+    # default/date-range views don't check readiness, just ready-to-pack.
+    needs_stages = load_order_needs_stages() if ready_to_pack else None
+
     while has_next and len(results) < fetch_cap:
         data = shopify_graphql(ORDER_LIST_QUERY, {'first': page_size, 'searchQuery': search_query, 'cursor': cursor})
         for edge in data['orders']['edges']:
@@ -191,6 +303,18 @@ def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None, read
             ship = node.get('shippingAddress') or {}
             customer = node.get('customer') or {}
             name = ship.get('name') or ' '.join(filter(None, [customer.get('firstName'), customer.get('lastName')])) or 'No name on file'
+
+            not_ready_reasons = []
+            if ready_to_pack:
+                for li_edge in line_item_edges:
+                    li = li_edge['node']
+                    if (li.get('currentQuantity') or 0) <= 0:
+                        continue
+                    product_tags = (li.get('product') or {}).get('tags') or []
+                    reason, detail = line_item_readiness(node['name'], li.get('sku'), product_tags, needs_stages)
+                    if reason:
+                        not_ready_reasons.append(reason)
+
             results.append({
                 'id': node['id'],
                 'orderNumber': node['name'],
@@ -200,6 +324,8 @@ def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None, read
                 'city': ship.get('city') or '',
                 'provinceCode': ship.get('provinceCode') or '',
                 'isLocalDelivery': LOCAL_DELIVERY_TAG in tags,
+                'notFullyArrived': bool(not_ready_reasons),
+                'notFullyArrivedReasons': sorted(set(not_ready_reasons)),
             })
         page_info = data['orders']['pageInfo']
         has_next = page_info['hasNextPage']
@@ -237,7 +363,7 @@ query OrderDetail($id: ID!) {
           variant {
             title
             image { url(transform: {maxWidth: 200, maxHeight: 200}) }
-            product { id featuredImage { url(transform: {maxWidth: 200, maxHeight: 200}) } }
+            product { id tags featuredImage { url(transform: {maxWidth: 200, maxHeight: 200}) } }
           }
         }
       }
@@ -248,6 +374,7 @@ query OrderDetail($id: ID!) {
 
 def get_order_details(order_ids):
     orders = []
+    needs_stages = load_order_needs_stages()
     for order_id in order_ids:
         data = shopify_graphql(ORDER_DETAIL_QUERY, {'id': order_id})
         node = data.get('order')
@@ -289,6 +416,13 @@ def get_order_details(order_ids):
             if product_id and bin_lookup.get(product_id):
                 bin_locations = bin_lookup[product_id].pop(0)
 
+            reason, detail = line_item_readiness(node['name'], li.get('sku'), product.get('tags'), needs_stages)
+            not_ready_badge = None
+            if reason == 'backorder':
+                not_ready_badge = 'BACKORDERED — not yet arrived'
+            elif reason == 'preorder':
+                not_ready_badge = f"PREORDER — releases {detail.strftime('%b %-d, %Y')}" if detail else 'PREORDER — release date pending'
+
             line_items.append({
                 'title': li['title'],
                 'sku': li.get('sku') or '',
@@ -296,6 +430,7 @@ def get_order_details(order_ids):
                 'variantTitle': variant_title if variant_title and variant_title != 'Default Title' else '',
                 'imageUrl': image_url,
                 'binLabel': format_bin_locations(bin_locations),
+                'notReadyBadge': not_ready_badge,
             })
 
         orders.append({
@@ -401,6 +536,8 @@ def build_order_flowables(order, styles):
             title_bits += f"<br/><font size=8 color='#6b5a63'>SKU: {li['sku']}</font>"
         if li.get('binLabel'):
             title_bits += f"<br/><font size=9 color='#059B9C'><b>{li['binLabel']}</b></font>"
+        if li.get('notReadyBadge'):
+            title_bits += f"<br/><font size=9 color='#C0392B'><b>{li['notReadyBadge']}</b></font>"
         rows.append([img_cell, Paragraph(title_bits, styles['ItemTitle']), Paragraph(str(li['quantity']), styles['QtyBox'])])
 
     items_table = Table(rows, colWidths=[0.75 * inch, 5.05 * inch, 1.0 * inch], repeatRows=1)

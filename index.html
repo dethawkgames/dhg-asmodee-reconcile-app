@@ -330,6 +330,7 @@
   .pl-badge.local { background: #dff5e1; color: #1e6b34; }
   .pl-badge.ship { background: #e7eefc; color: #1c4587; }
   .pl-badge.partial { background: #fdf1d6; color: #93650c; margin-left: 4px; }
+  .pl-badge.not-arrived { background: #fbe1de; color: #a8321b; margin-left: 4px; }
 
   .jump-nav {
     position: sticky;
@@ -1532,6 +1533,7 @@ function plRender() {
       <td>
         <span class="pl-badge ${o.isLocalDelivery ? 'local' : 'ship'}">${o.isLocalDelivery ? 'LOCAL' : 'SHIP'}</span>
         ${o.fulfillmentStatus === 'PARTIALLY_FULFILLED' ? '<span class="pl-badge partial">PARTIAL</span>' : ''}
+        ${o.notFullyArrived ? `<span class="pl-badge not-arrived" title="${o.notFullyArrivedReasons.join(', ')}">NOT FULLY ARRIVED</span>` : ''}
       </td>
     </tr>
   `).join('');
@@ -1560,7 +1562,7 @@ async function plLoadOrders(readyToPack) {
 
   if (readyToPack) {
     params.set('readyToPack', '1');
-    filterStatus.textContent = 'Showing every order tagged "Order Received" that\'s still unfulfilled or partially fulfilled — ready to pack.';
+    filterStatus.textContent = 'Showing every order tagged "Order Received" that\'s still unfulfilled or partially fulfilled — ready to pack. Orders with a straggler backorder or slipping preorder are flagged NOT FULLY ARRIVED and left unchecked; check them yourself if you\'re deliberately shipping the rest.';
   } else {
     const since = document.getElementById('plSinceInput').value;
     const until = document.getElementById('plUntilInput').value;
@@ -1578,10 +1580,14 @@ async function plLoadOrders(readyToPack) {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Failed to load orders');
     plState.orders = data.orders;
-    // Ready-to-pack is a curated, just-invoiced batch - default to everything
-    // selected so one click on Generate covers the whole batch; the normal
-    // recent/date-range views stay unchecked-by-default as before.
-    plState.selected = readyToPack ? new Set(data.orders.map((o) => o.id)) : new Set();
+    // Ready-to-pack is a curated, just-invoiced batch - default everything
+    // selected EXCEPT orders flagged notFullyArrived (a genuine straggler
+    // item per the Order Needs sheet, or a slipping preorder release date).
+    // Those still show up so nothing's hidden, but Iain has to deliberately
+    // check them - matching how he actually decides to ship those orders.
+    plState.selected = readyToPack
+      ? new Set(data.orders.filter((o) => !o.notFullyArrived).map((o) => o.id))
+      : new Set();
     plRender();
   } catch (err) {
     plResultDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
