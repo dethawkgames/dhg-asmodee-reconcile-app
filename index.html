@@ -609,12 +609,14 @@
       <label>To <input type="date" id="plUntilInput"></label>
       <button id="plApplyFilterBtn">Apply filter</button>
       <span style="color: var(--ink-soft); font-size: 12.5px;">|</span>
+      <button id="plReadyToPackBtn">Ready to pack</button>
+      <span style="color: var(--ink-soft); font-size: 12.5px;">|</span>
       <button id="plRefreshBtn">Refresh</button>
       <button id="plSelectAllBtn">Select all</button>
       <button id="plClearBtn">Clear selection</button>
       <button id="plGenerateBtn" disabled>Generate PDF (0 selected)</button>
     </div>
-    <p class="pl-status" id="plFilterStatus">Click "Refresh" to load unfulfilled orders (most recent 25, or set a date range first).</p>
+    <p class="pl-status" id="plFilterStatus">Click "Ready to pack" to load orders tagged Order Received that are still unfulfilled or partial, or "Refresh" to load unfulfilled orders (most recent 25, or set a date range first).</p>
 
     <div id="plResult"></div>
   </div>
@@ -1551,19 +1553,24 @@ function plRender() {
   plUpdateGenerateBtn();
 }
 
-async function plLoadOrders() {
+async function plLoadOrders(readyToPack) {
   plResultDiv.innerHTML = '<p class="loading">Loading orders from Shopify...</p>';
-  const since = document.getElementById('plSinceInput').value;
-  const until = document.getElementById('plUntilInput').value;
   const params = new URLSearchParams({ limit: '25' });
-  if (since) params.set('since', since);
-  if (until) params.set('until', until);
-
   const filterStatus = document.getElementById('plFilterStatus');
-  if (since || until) {
-    filterStatus.textContent = `Showing all unfulfilled orders${since ? ' from ' + since : ''}${until ? ' through ' + until : ''}.`;
+
+  if (readyToPack) {
+    params.set('readyToPack', '1');
+    filterStatus.textContent = 'Showing every order tagged "Order Received" that\'s still unfulfilled or partially fulfilled — ready to pack.';
   } else {
-    filterStatus.textContent = 'Showing the most recent 25 unfulfilled orders. Set a date range to see everything in that window.';
+    const since = document.getElementById('plSinceInput').value;
+    const until = document.getElementById('plUntilInput').value;
+    if (since) params.set('since', since);
+    if (until) params.set('until', until);
+    if (since || until) {
+      filterStatus.textContent = `Showing all unfulfilled orders${since ? ' from ' + since : ''}${until ? ' through ' + until : ''}.`;
+    } else {
+      filterStatus.textContent = 'Showing the most recent 25 unfulfilled orders. Set a date range to see everything in that window.';
+    }
   }
 
   try {
@@ -1571,15 +1578,19 @@ async function plLoadOrders() {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Failed to load orders');
     plState.orders = data.orders;
-    plState.selected.clear();
+    // Ready-to-pack is a curated, just-invoiced batch - default to everything
+    // selected so one click on Generate covers the whole batch; the normal
+    // recent/date-range views stay unchecked-by-default as before.
+    plState.selected = readyToPack ? new Set(data.orders.map((o) => o.id)) : new Set();
     plRender();
   } catch (err) {
     plResultDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
   }
 }
 
-document.getElementById('plRefreshBtn').addEventListener('click', plLoadOrders);
-document.getElementById('plApplyFilterBtn').addEventListener('click', plLoadOrders);
+document.getElementById('plRefreshBtn').addEventListener('click', () => plLoadOrders(false));
+document.getElementById('plApplyFilterBtn').addEventListener('click', () => plLoadOrders(false));
+document.getElementById('plReadyToPackBtn').addEventListener('click', () => plLoadOrders(true));
 document.getElementById('plSelectAllBtn').addEventListener('click', () => {
   plState.orders.forEach((o) => plState.selected.add(o.id));
   plRender();

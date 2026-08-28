@@ -139,18 +139,27 @@ query PickableOrders($first: Int!, $searchQuery: String!, $cursor: String) {
 
 DEFAULT_ORDER_LIMIT = 25
 PAGE_SIZE = 50
-# Safety net for date-filtered pulls so a huge accidental range can't run away
-# indefinitely - well beyond any realistic weekly/monthly pick batch.
+# Safety net for date-filtered/ready-to-pack pulls so a huge accidental range
+# can't run away indefinitely - well beyond any realistic weekly/monthly pick batch.
 MAX_FILTERED_ORDERS = 1000
+# Applied by mark-arrived.py once every unit on the order has arrived. The
+# sibling 'dhg-status-order-received-preorder' tag is deliberately excluded -
+# those are held back until closer to release and aren't ready to pack.
+READY_TO_PACK_TAG = 'dhg-status-order-received'
 
-def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None):
-    """No date range: most-recent-first, capped at `limit` (default 25 - same
-    as iPacky's picking list). With a date range given, the 25-cap is lifted
-    entirely and every matching unfulfilled/partial order in that window is
-    returned (paginated), up to a generous safety cap."""
+def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None, ready_to_pack=False):
+    """No date range and not ready-to-pack: most-recent-first, capped at
+    `limit` (default 25 - same as iPacky's picking list). With a date range
+    given, OR with ready_to_pack set, the 25-cap is lifted entirely and every
+    matching order is returned (paginated), up to a generous safety cap -
+    for ready_to_pack there's no natural cap since it's a curated batch, and
+    quietly capping it at 25 would silently hide orders that need packing."""
     has_date_filter = bool(since or until)
+    uncapped = has_date_filter or ready_to_pack
 
     query_parts = ['(fulfillment_status:unfulfilled OR fulfillment_status:partial)']
+    if ready_to_pack:
+        query_parts.append(f"tag:'{READY_TO_PACK_TAG}'")
     if since:
         query_parts.append(f'created_at:>={since}')
     if until:
@@ -161,7 +170,7 @@ def list_pickable_orders(limit=DEFAULT_ORDER_LIMIT, since=None, until=None):
     cursor = None
     has_next = True
 
-    if has_date_filter:
+    if uncapped:
         page_size = PAGE_SIZE
         fetch_cap = MAX_FILTERED_ORDERS
     else:
@@ -447,8 +456,9 @@ class handler(BaseHTTPRequestHandler):
             limit = query.get('limit', [DEFAULT_ORDER_LIMIT])[0]
             since = query.get('since', [None])[0] or None
             until = query.get('until', [None])[0] or None
-            orders = list_pickable_orders(limit=limit, since=since, until=until)
-            self._send_json(200, {'success': True, 'orders': orders, 'limit': int(limit)})
+            ready_to_pack = query.get('readyToPack', [None])[0] in ('1', 'true', 'True')
+            orders = list_pickable_orders(limit=limit, since=since, until=until, ready_to_pack=ready_to_pack)
+            self._send_json(200, {'success': True, 'orders': orders, 'limit': int(limit), 'readyToPack': ready_to_pack})
         except Exception as e:
             import traceback
             self._send_json(500, {'error': str(e), 'trace': traceback.format_exc()})
