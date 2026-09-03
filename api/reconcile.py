@@ -659,7 +659,11 @@ class handler(BaseHTTPRequestHandler):
             would_tag = []
             for order_name in touched_orders:
                 order_rows = rows_by_order.get(order_name, [])
-                fully_shipped = all(
+                # order_rows can be empty if this order was touched but ended
+                # up with zero matching Order Needs rows at tagging time -
+                # all() on an empty iterable is vacuously True, which would
+                # wrongly mark a never-ordered order as fully shipped.
+                fully_shipped = bool(order_rows) and all(
                     r[6] == 'Fulfilled - Existing Stock' or STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped')
                     for r in order_rows
                 )

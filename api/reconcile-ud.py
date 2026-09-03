@@ -589,7 +589,11 @@ class handler(BaseHTTPRequestHandler):
             tagged, tag_errors, skipped_inventory_queued = [], [], []
             for order_name in touched_orders:
                 order_rows = rows_by_order.get(order_name, [])
-                fully_shipped = all(STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped') for r in order_rows)
+                # all() on an empty order_rows is vacuously True - guard
+                # against tagging an order that has zero matching Order
+                # Needs rows.
+                fully_shipped = bool(order_rows) and all(
+                    STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Shipped') for r in order_rows)
                 if not fully_shipped:
                     continue
                 try:

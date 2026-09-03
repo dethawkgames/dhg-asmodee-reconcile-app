@@ -337,7 +337,12 @@ def lock_supplier_order(supplier):
     skipped_inventory_queued = []
     for order_name in touched_orders:
         order_rows = rows_by_order.get(order_name, [])
-        fully_ordered = all(STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Ordered') for r in order_rows)
+        # order_rows can be empty if this order was touched (added to
+        # touched_orders) but ended up with zero matching Order Needs rows at
+        # tagging time - Python's all() on an empty iterable is vacuously
+        # True, which would wrongly mark a never-ordered order as complete.
+        fully_ordered = bool(order_rows) and all(
+            STAGE_ORDER.index(r[6]) >= STAGE_ORDER.index('Ordered') for r in order_rows)
         if not fully_ordered:
             continue
         try:
