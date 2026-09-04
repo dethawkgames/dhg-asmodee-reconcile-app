@@ -333,7 +333,12 @@ def get_inventory_item_ids(skus):
     return result
 
 def apply_received_inventory(sku_qty_map, reference_doc_uri):
-    """sku_qty_map: {sku: qty_received}. Posts one additive `available` delta
+    """NOT CALLED as of Sept 2026 - the do_POST handler no longer invokes
+    this (see comment there). Left in place as reference for the rebuild,
+    since the additive-delta mechanics below may still be useful once a
+    real idempotency check is added - just don't wire this back in as-is.
+
+    sku_qty_map: {sku: qty_received}. Posts one additive `available` delta
     per SKU per invoice via a single batched mutation. `available` is the
     only base state this mutation can adjust directly for a receiving event
     (on_hand and committed are derived, not directly writable) - increasing
@@ -611,22 +616,18 @@ class handler(BaseHTTPRequestHandler):
             file_bytes = fs['file'].file.read()
             quote_items = parse_asmodee_quote(file_bytes)
 
-            # Post physical receipt to Shopify inventory for every unit on
-            # this invoice - allocated or surplus, regardless of Order Needs
-            # state. This runs independent of the Order Needs advancement
-            # below, so a stage-advancement issue never blocks the inventory
-            # count from reflecting what actually arrived.
-            received_sku_qty = {}
-            for item in quote_items:
-                sku = (item.get('sku') or '').strip()
-                qty = item.get('quantity')
-                if sku and isinstance(qty, int):
-                    received_sku_qty[sku] = received_sku_qty.get(sku, 0) + qty
-            invoice_ref = f'gid://dhg-asmodee-reconcile-app/AsmodeeInvoice/{time.strftime("%Y-%m-%d")}'
-            if dry_run:
-                inventory_result = {'dryRun': True, 'wouldPostSkuQty': received_sku_qty}
-            else:
-                inventory_result = apply_received_inventory(received_sku_qty, invoice_ref)
+            # Live Shopify inventory posting has been intentionally removed
+            # from this endpoint (Sept 2026) - it was posting an additive,
+            # non-idempotent `available` delta on every call (see git history
+            # / apply_received_inventory), with no check against what had
+            # already been posted for a given invoice. That caused repeat
+            # uploads of the same invoice to double- (or triple-) count
+            # inventory, which led to a real oversell on MEC110. This stage
+            # (Ordered -> Shipped) should only ever move the pipeline stage
+            # and Shopify order tags below - it should never be the thing
+            # that writes to live available inventory. That responsibility
+            # is being rebuilt separately, deliberately, elsewhere.
+            inventory_result = {'skipped': True, 'reason': 'inventory posting disabled pending rebuild - see comment above'}
 
             order_needs_rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
 
