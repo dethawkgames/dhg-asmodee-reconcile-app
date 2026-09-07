@@ -483,13 +483,20 @@ def load_submitted_from_order_needs(order_needs_rows, blocked_pairs=frozenset())
     return submitted
 
 def run_comparison(submitted, quote_items):
+    # Sum, don't overwrite - same fix as reconcile-arrived-asmodee.py's
+    # run_comparison. Asmodee invoices/quotes can carry the same SKU as
+    # multiple separate line items, and a plain dict assignment here
+    # silently dropped every occurrence but the last, undercounting the
+    # true quoted/invoiced quantity for any repeated SKU.
     quoted = {}
     for item in quote_items:
         sku = (item.get('sku') or '').strip()
         if not sku:
             continue
         qty = item['quantity'] if isinstance(item['quantity'], int) else 0
-        quoted[sku] = {'quantity': qty, 'description': item.get('description', '')}
+        if sku not in quoted:
+            quoted[sku] = {'quantity': 0, 'description': item.get('description', '')}
+        quoted[sku]['quantity'] += qty
 
     results = []
     all_skus = set(submitted.keys()) | set(quoted.keys())

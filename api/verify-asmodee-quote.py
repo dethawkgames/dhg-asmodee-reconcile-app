@@ -136,13 +136,18 @@ def load_locked_skus(supplier_order_id):
     return locked
 
 def compare_quote_to_locked(quote_items, locked_skus):
+    # Sum, don't overwrite - same fix as reconcile.py / reconcile-arrived-
+    # asmodee.py's run_comparison. A repeated SKU across multiple invoice/
+    # quote line items was silently undercounted to just the last occurrence.
     quoted = {}
     for item in quote_items:
         sku = (item.get('sku') or '').strip()
         if not sku:
             continue
         qty = item['quantity'] if isinstance(item['quantity'], int) else 0
-        quoted[sku] = {'quantity': qty, 'description': item.get('description', '')}
+        if sku not in quoted:
+            quoted[sku] = {'quantity': 0, 'description': item.get('description', '')}
+        quoted[sku]['quantity'] += qty
 
     mismatches = []
     all_skus = set(locked_skus.keys()) | set(quoted.keys())

@@ -354,13 +354,22 @@ def load_awaiting_arrival_from_order_needs(order_needs_rows, blocked_pairs=froze
     return awaiting
 
 def run_comparison(awaiting, invoice_items):
+    # Sum, don't overwrite - Asmodee invoices can carry the same SKU as
+    # multiple separate line items (e.g. split across the original orders
+    # that were combined into one restock shipment). A plain dict assignment
+    # here silently dropped every occurrence but the last, undercounting the
+    # true invoiced quantity for any repeated SKU (confirmed 8/13/26 on
+    # PS-INV26171334: SWQ154 truly totaled 6 across 3 lines but was read as
+    # 2; SWQ49 truly totaled 2 across 2 lines but was read as 1).
     invoiced = {}
     for item in invoice_items:
         sku = (item.get('sku') or '').strip()
         if not sku:
             continue
         qty = item['quantity'] if isinstance(item['quantity'], int) else 0
-        invoiced[sku] = {'quantity': qty, 'description': item.get('description', '')}
+        if sku not in invoiced:
+            invoiced[sku] = {'quantity': 0, 'description': item.get('description', '')}
+        invoiced[sku]['quantity'] += qty
 
     results = []
     all_skus = set(awaiting.keys()) | set(invoiced.keys())
