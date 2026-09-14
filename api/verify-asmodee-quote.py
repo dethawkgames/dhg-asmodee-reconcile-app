@@ -12,12 +12,32 @@ import urllib.error
 
 # Verifies an Asmodee Sales Quote against what was actually Locked with this
 # supplier under the most recent Supplier Order ID, BEFORE the order goes to
-# the warehouse. This is a pure sanity check - it never advances any Order
-# Needs stage and never touches Shopify tags. It exists to catch Iain-side
-# or sales-rep-side mistakes (wrong SKU, wrong quantity, missed item) while
-# they're still cheap to fix, i.e. before the warehouse ships anything.
+# the warehouse. It exists to catch Iain-side or sales-rep-side mistakes
+# (wrong SKU, wrong quantity, missed item) while they're still cheap to fix,
+# i.e. before the warehouse ships anything.
+#
+# IMPORTANT (2026-09-14 fix): lock-supplier-order.py sets Stage straight to
+# 'Ordered' the moment a row is locked, before any quote has confirmed the
+# supplier actually accepted it. If a SKU never makes it onto the real quote
+# (Asmodee out of stock, rep missed it, etc.), that row used to sit
+# permanently mislabeled 'Ordered' with no way back in - the tracker would
+# keep reporting the order as fully ordered even though nothing was ever
+# actually placed for that unit, and lock-supplier-order.py would never pick
+# it up again since it only looks for rows already back at 'NotOrdered'.
+#
+# This script now closes that loop: any SKU that's Locked under the latest
+# Supplier Order ID but MISSING from the uploaded quote gets automatically
+# reverted here - Supplier Order ID cleared, Stage set back to 'NotOrdered' -
+# so the next Lock & Order run for Asmodee picks it back up on its own.
+# Quantity mismatches and quote-but-not-locked extras are left alone and
+# only reported, since those need a human judgment call (which number is
+# right, whether an extra was intentional padding, etc.) rather than an
+# automatic revert. This script still never touches Shopify tags - that
+# stays the job of lock-supplier-order.py / reconcile.py.
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
+ORDER_NEEDS_TAB = 'Order Needs'
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
 SUPPLIER_ORDERS_LOG_TAB = 'Supplier Orders Log'
 SUPPLIER = 'Asmodee'
 
@@ -86,8 +106,10 @@ def parse_asmodee_quote(file_bytes):
     return [item for item in line_items if not item.get('is_fee')]
 
 # ── Google Sheets auth + access ──────────────────────────────────────────────
+# Scope upgraded from readonly to read/write (2026-09-14) so this script can
+# perform the auto-revert described above, not just report mismatches.
 
-def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets.readonly'):
+def get_google_token(scope='https://www.googleapis.com/auth/spreadsheets'):
     sa_email = os.environ['GOOGLE_SA_EMAIL']
     sa_key = os.environ['GOOGLE_SA_PRIVATE_KEY'].replace('\\n', '\n')
     now = int(time.time())
@@ -104,6 +126,22 @@ def sheets_get(spreadsheet_id, range_str):
     req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read()).get('values', [])
+
+def sheets_batch_update(spreadsheet_id, range_value_pairs):
+    """range_value_pairs: list of (range_str, [[v1, v2, ...]]) tuples."""
+    if not range_value_pairs:
+        return
+    token = get_google_token()
+    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values:batchUpdate'
+    body = json.dumps({
+        'valueInputOption': 'RAW',
+        'data': [{'range': r, 'values': v} for r, v in range_value_pairs],
+    }).encode()
+    req = urllib.request.Request(url, data=body, method='POST', headers={
+        'Authorization': f'Bearer {token}', 'Content-Type': 'application/json',
+    })
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
 
 # ── Comparison logic ─────────────────────────────────────────────────────────
 
@@ -134,6 +172,39 @@ def load_locked_skus(supplier_order_id):
         sku, qty, order_names = row[3], row[4], row[5]
         locked[sku] = {'qty': int(qty) if str(qty).isdigit() else 0, 'order_names': order_names}
     return locked
+
+def revert_missing_from_quote(supplier_order_id, missing_skus):
+    """Reverts every Order Needs row that's Locked under supplier_order_id
+    for one of the given missing_skus back to its pre-lock state: Supplier
+    Order ID cleared, Stage set to 'NotOrdered'. This is what lets
+    lock-supplier-order.py naturally pick these units back up on its next
+    run for this supplier, instead of leaving them stranded at 'Ordered'
+    for a unit the supplier never actually accepted.
+
+    Returns a list of {'sku', 'orderName'} dicts describing what was
+    reverted, for the caller to report back.
+    """
+    if not missing_skus:
+        return []
+
+    rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
+    today = time.strftime('%Y-%m-%d')
+    updates = []
+    reverted = []
+    for idx, row in enumerate(rows):
+        if not row or not row[0]:
+            continue
+        row = row + [''] * (8 - len(row))
+        order_name, sku, title, supplier, unit, sup_id, stage, updated = row
+        if supplier != SUPPLIER or sup_id != supplier_order_id or sku not in missing_skus:
+            continue
+        sheet_row = idx + 2  # +1 for header, +1 for 1-indexing
+        updates.append((f"'{ORDER_NEEDS_TAB}'!F{sheet_row}:H{sheet_row}",
+                         [['', 'NotOrdered', today]]))
+        reverted.append({'sku': sku, 'orderName': order_name})
+
+    sheets_batch_update(AGG_SHEET_ID, updates)
+    return reverted
 
 def compare_quote_to_locked(quote_items, locked_skus):
     # Sum, don't overwrite - same fix as reconcile.py / reconcile-arrived-
@@ -207,6 +278,14 @@ class handler(BaseHTTPRequestHandler):
             locked_skus = load_locked_skus(supplier_order_id)
             mismatches = compare_quote_to_locked(quote_items, locked_skus)
 
+            # Auto-revert anything Locked but missing from the quote back to
+            # NotOrdered, so it's picked back up by the next lock run instead
+            # of sitting mislabeled 'Ordered' indefinitely. Quantity
+            # mismatches and quote-but-not-locked extras are left for Iain
+            # to judge - see module docstring.
+            missing_skus = {m['sku'] for m in mismatches if m['issue'].startswith('Locked but MISSING')}
+            reverted = revert_missing_from_quote(supplier_order_id, missing_skus)
+
             self._send_json(200, {
                 'success': True,
                 'comparedAgainstSupplierOrderId': supplier_order_id,
@@ -215,6 +294,8 @@ class handler(BaseHTTPRequestHandler):
                 'mismatchCount': len(mismatches),
                 'mismatches': mismatches,
                 'clean': len(mismatches) == 0,
+                'revertedToNotOrdered': reverted,
+                'revertedCount': len(reverted),
             })
         except Exception as e:
             import traceback
