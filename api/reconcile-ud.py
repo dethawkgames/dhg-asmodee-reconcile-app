@@ -551,18 +551,25 @@ class handler(BaseHTTPRequestHandler):
 
             invoice_items_by_key = aggregate_invoice_items(all_items)
 
-            # Post physical receipt to Shopify inventory for every unit
-            # across all uploaded invoices - allocated or surplus, regardless
-            # of Order Needs state. Independent of the advancement below, so
-            # a stage-advancement issue never blocks the inventory count.
-            received_sku_qty = {}
-            for v in invoice_items_by_key.values():
-                sku = (v.get('sku') or '').strip()
-                qty = v.get('quantity')
-                if sku and isinstance(qty, int):
-                    received_sku_qty[sku] = received_sku_qty.get(sku, 0) + qty
-            invoice_ref = f'gid://dhg-asmodee-reconcile-app/UDInvoice/{time.strftime("%Y-%m-%d")}'
-            inventory_result = apply_received_inventory(received_sku_qty, invoice_ref)
+            # DISABLED 2026-09-15 (Iain): this call posted an unconditional
+            # additive `available` delta to Shopify on every non-dry-run
+            # POST, with no idempotency check - reprocessing/re-uploading
+            # the same UD invoice (e.g. SINV-098101, uploaded twice) double-
+            # posted phantom stock. Same root-cause pattern already found
+            # and fixed in reconcile.py (Asmodee) on 2026-09-04. Mark-as-
+            # shipped should only advance Order Needs stage / Shopify order
+            # tags, not touch live inventory - that belongs at the Arrived
+            # step. apply_received_inventory() is left below, unused, as
+            # reference pending a real fix/rebuild.
+            # received_sku_qty = {}
+            # for v in invoice_items_by_key.values():
+            #     sku = (v.get('sku') or '').strip()
+            #     qty = v.get('quantity')
+            #     if sku and isinstance(qty, int):
+            #         received_sku_qty[sku] = received_sku_qty.get(sku, 0) + qty
+            # invoice_ref = f'gid://dhg-asmodee-reconcile-app/UDInvoice/{time.strftime("%Y-%m-%d")}'
+            # inventory_result = apply_received_inventory(received_sku_qty, invoice_ref)
+            inventory_result = {'skusPosted': 0, 'unitsPosted': 0, 'skippedNoInventoryItem': [], 'userErrors': [], 'disabled': True}
 
             barcode_by_sku = load_ud_barcode_by_sku()
             order_needs_rows = sheets_get(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
