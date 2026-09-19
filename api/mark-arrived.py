@@ -23,7 +23,7 @@ import jwt
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
 ORDER_NEEDS_TAB = 'Order Needs'
-ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:I50000"
 
 SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
 SHOPIFY_API_VERSION = '2025-01'
@@ -265,8 +265,8 @@ def mark_arrived(supplier):
             continue
         if idx in to_delete:
             continue
-        row = row + [''] * (8 - len(row))
-        order_name, sku, title, row_supplier, unit, sup_id, stage, updated = row
+        row = row + [''] * (9 - len(row))
+        order_name, sku, title, row_supplier, unit, sup_id, stage, updated, notes = row
 
         order_id, current_status, fulfillment, cancelled_at, line_items = current_details.get(order_name, (None, None, None, None, []))
         if fulfillment == 'FULFILLED' or cancelled_at:
@@ -283,7 +283,7 @@ def mark_arrived(supplier):
 
     sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
     if padded_rows:
-        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(padded_rows) + 1}", padded_rows)
+        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:I{len(padded_rows) + 1}", padded_rows)
 
     # Recompute order-level completion for every touched order
     rows_by_order = {}

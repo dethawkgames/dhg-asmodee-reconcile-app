@@ -41,7 +41,7 @@ import urllib.error
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
 SKUS_SHEET_ID = '1yC-oZ-0hD5ReTcOA9iTjTGC6mONbDUCpfbZZA9GrQtI'
 ORDER_NEEDS_TAB = 'Order Needs'
-ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:I50000"
 RECONCILE_TAB = 'Latest UD Arrival Reconciliation'
 SUPPLIER = 'Universal Dist'
 STAGE_ORDER = ['NotOrdered', 'Ordered', 'Shipped', 'Arrived']
@@ -354,8 +354,8 @@ def load_awaiting_arrival_from_order_needs(order_needs_rows, barcode_by_sku, blo
     for row in order_needs_rows:
         if not row or not row[0]:
             continue
-        row = row + [''] * (8 - len(row))
-        order_name, sku, title, supplier, unit, sup_id, stage, updated = row
+        row = row + [''] * (9 - len(row))
+        order_name, sku, title, supplier, unit, sup_id, stage, updated, notes = row
         if supplier != SUPPLIER or stage != 'Shipped':
             continue
         if (order_name, sku) in blocked_pairs:
@@ -448,9 +448,9 @@ def advance_arrived_stage(order_needs_rows, comparison_results, blocked_pairs=fr
     for idx, row in enumerate(order_needs_rows):
         if not row or not row[0]:
             continue
-        row = row + [''] * (8 - len(row))
+        row = row + [''] * (9 - len(row))
         order_needs_rows[idx] = row
-        order_name, sku, title, supplier, unit, sup_id, stage, updated = row
+        order_name, sku, title, supplier, unit, sup_id, stage, updated, notes = row
         if supplier != SUPPLIER or stage != 'Shipped':
             continue
         if (order_name, sku) in blocked_pairs:
@@ -536,7 +536,7 @@ def process_invoice(file_fields_bytes_and_names, dry_run):
     if not dry_run:
         sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
         if updated_rows:
-            sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(updated_rows) + 1}", updated_rows)
+            sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:I{len(updated_rows) + 1}", updated_rows)
 
     rows_by_order = {}
     for row in updated_rows:

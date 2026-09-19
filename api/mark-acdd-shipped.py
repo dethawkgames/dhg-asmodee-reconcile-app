@@ -19,7 +19,7 @@ import jwt
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
 ORDER_NEEDS_TAB = 'Order Needs'
-ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:I50000"
 SUPPLIER = 'ACDD'
 
 SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
@@ -192,7 +192,7 @@ def mark_acdd_shipped():
     for row in rows:
         if not row or not row[0]:
             continue
-        row = row + [''] * (8 - len(row))
+        row = row + [''] * (9 - len(row))
         if row[3] == SUPPLIER and row[6] == 'Ordered' and (row[0], row[1]) not in blocked_pairs:
             row[6] = 'Shipped'
             row[7] = today
@@ -202,7 +202,7 @@ def mark_acdd_shipped():
 
     sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
     if padded_rows:
-        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(padded_rows) + 1}", padded_rows)
+        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:I{len(padded_rows) + 1}", padded_rows)
 
     rows_by_order = {}
     for row in padded_rows:

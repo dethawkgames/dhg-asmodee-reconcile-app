@@ -9,7 +9,7 @@ import jwt
 
 AGG_SHEET_ID = '1rsUU7qZJZGhivsofBiFPa7FK6qnHosrxps10NYzLxAE'
 ORDER_NEEDS_TAB = 'Order Needs'
-ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:H50000"
+ORDER_NEEDS_RANGE = f"'{ORDER_NEEDS_TAB}'!A2:I50000"
 SUPPLIER_ORDERS_LOG_TAB = 'Supplier Orders Log'
 
 SHOPIFY_SHOP = os.environ.get('SHOPIFY_SHOP', 'detective-hawk-games.myshopify.com')
@@ -289,8 +289,8 @@ def lock_supplier_order(supplier):
     for idx, row in enumerate(rows):
         if not row or not row[0]:
             continue
-        row = row + [''] * (8 - len(row))
-        order_name, sku, title, row_supplier, unit, sup_id, stage, updated = row
+        row = row + [''] * (9 - len(row))
+        order_name, sku, title, row_supplier, unit, sup_id, stage, updated, notes = row
         if row_supplier != supplier or sup_id or stage != 'NotOrdered':
             continue
         if (order_name, sku) in blocked_pairs:
@@ -313,7 +313,7 @@ def lock_supplier_order(supplier):
     # cancellation/refund check above may have shrunk the row count)
     sheets_clear(AGG_SHEET_ID, ORDER_NEEDS_RANGE)
     if rows:
-        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:H{len(rows) + 1}", rows)
+        sheets_put(AGG_SHEET_ID, f"'{ORDER_NEEDS_TAB}'!A2:I{len(rows) + 1}", rows)
 
     # Append to the permanent Supplier Orders Log - one row per SKU
     log_append_rows = []
@@ -329,7 +329,7 @@ def lock_supplier_order(supplier):
     for row in all_rows:
         if not row or not row[0]:
             continue
-        row = row + [''] * (8 - len(row))
+        row = row + [''] * (9 - len(row))
         rows_by_order.setdefault(row[0], []).append(row)
 
     tagged = []
