@@ -102,6 +102,21 @@ export default async function middleware(request) {
     );
   }
 
+  // Vercel Cron calls this one endpoint unattended, on its own schedule -
+  // it can't carry the site's login cookie. Vercel signs cron requests with
+  // Authorization: Bearer $CRON_SECRET automatically when CRON_SECRET is
+  // set in the project's env vars; only that exact header bypasses the
+  // gate, and only for this one path.
+  if (url.pathname === '/api/cleanup-order-needs') {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get('authorization') || '';
+    if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+      return; // let the cron-authenticated request through
+    }
+    // Any other caller (browser, curl, etc.) still needs the password -
+    // fall through to the normal cookie check below.
+  }
+
   // Handle login form submission
   if (url.pathname === LOGIN_PATH && request.method === 'POST') {
     const form = await request.formData();

@@ -47,6 +47,7 @@ Import the repo at vercel.com/new as usual.
 |---|---|
 | `GOOGLE_SA_EMAIL` | `dhg-sheets-bot@dhg-automation.iam.gserviceaccount.com` |
 | `GOOGLE_SA_PRIVATE_KEY` | Full private key from the service account JSON, including BEGIN/END lines |
+| `CRON_SECRET` | Any random string. Vercel sends it automatically as `Authorization: Bearer $CRON_SECRET` on the scheduled call to `/api/cleanup-order-needs` (see below) — set this so the middleware can recognize and let through that one unattended request. |
 
 ### 3. Deploy, then test
 
@@ -81,3 +82,17 @@ This means an order with items from two different suppliers needs both buttons c
 ### Important: this only works for the CURRENT week
 
 The Shipment Tracking tab gets rebuilt fresh every Monday by the aggregation tool. If a supplier's shipment isn't marked before the next Monday's run, that week's tracking data is gone and the button will act on the new week's orders instead. Mark shipments before each Monday's aggregation run.
+
+## Order Needs Cleanup (added later)
+
+`api/cleanup-order-needs.py` runs daily (12:00 UTC, via Vercel Cron — see `vercel.json`) and removes Order Needs rows that no longer represent real outstanding demand:
+
+- **Cancelled order** → every row for that order is removed, whatever stage it's at.
+- **Fulfilled order** (shipped to the customer) → every row for that order is removed. A Shopify order can only become fully `FULFILLED` once every line item's owed units are actually on hand, so a fulfilled order has nothing left for Order Needs to track — this is the fix for rows sitting at `Arrived` forever after the order they belonged to was long since packed and shipped, since none of the other scripts ever re-check a row once it reaches `Arrived`.
+- **Refunded (or edited-out) line item** on an otherwise still-open order → just the excess rows for that specific SKU are removed, based on comparing Shopify's live line-item quantity against how many Order Needs rows are still tracking it.
+
+Every removed row is appended in full to the **Order Needs Removal Log** tab first (date, order, SKU, title, supplier, unit, supplier order ID, stage and notes at the time of removal, reason, and a warning column) — nothing is ever silently dropped. A row removed while still at `Shipped` or `Arrived` gets a warning noted in that log, since that's physical stock (in transit, or already in the warehouse) that may need a manual inventory adjustment; this script never touches live Shopify inventory itself, same as every other script in this app.
+
+Can also be triggered manually — `POST /api/cleanup-order-needs` with an optional `{"dry_run": true}` JSON body to preview without writing.
+
+Vercel's Hobby plan limits cron jobs to once a day; on Pro you can tighten the schedule in `vercel.json` if you want it running more often.

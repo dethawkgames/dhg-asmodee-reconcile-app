@@ -32,6 +32,15 @@
     },
     "api/lookup-barcode.py": {
       "maxDuration": 30
+    },
+    "api/cleanup-order-needs.py": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cleanup-order-needs",
+      "schedule": "0 12 * * *"
+    }
+  ]
 }
